@@ -1,8 +1,15 @@
 from __future__ import annotations
 
+import sys
+
 import pytest
 
 from drone_graph.terminal import Terminal, TerminalTimeout
+
+pytestmark = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="Terminal PTY uses POSIX select(); not supported on Windows CI/dev",
+)
 
 
 def test_basic_stdout_exit_code() -> None:

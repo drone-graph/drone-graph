@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 
 class Provider(StrEnum):
@@ -76,8 +76,8 @@ class AnthropicClient:
             model=self.model,
             max_tokens=4096,
             system=system,
-            messages=messages,
-            tools=tools,
+            messages=cast(Any, messages),
+            tools=cast(Any, tools),
         )
         text_parts: list[str] = []
         tool_calls: list[ToolCall] = []

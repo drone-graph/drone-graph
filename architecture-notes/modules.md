@@ -8,7 +8,8 @@ Each module is a directory under `src/drone_graph/` with a single responsibility
 - `gaps/` imports nothing internal.
 - `terminal/` imports nothing internal.
 - `prompts/` is text + a loader; imports nothing.
-- `drones/` may import `substrate`, `gaps`, `terminal`, `prompts`.
+- `model_registry/` may import `gaps` (for `ModelTier`) and `drones.providers` (for `Provider`) only — no `substrate`, no `terminal`.
+- `drones/` may import `substrate`, `gaps`, `terminal`, `prompts`, `model_registry`.
 - `orchestrator/` may import `substrate`, `gaps`, `drones`.
 - `cli.py` may import anything.
 
@@ -49,6 +50,25 @@ If you're about to import across a sibling (e.g., `terminal` reaching into `dron
 
 ---
 
+## `model_registry/`
+
+**Purpose.** The **model registry**: stable `dgraph_model_id`, vendor `provider` + `vendor_model_id`, token caps, **USD per 1M token** pricing (input/output/cache), multi-valued **capabilities**, **rate_limits**, and **`deprecated`**. When populated, **`tier_defaults`** maps each **`ModelTier`** to a row in **`models`**.
+
+**Interface (v1).**
+- `ModelRegistryEntry`, `ModelRegistryFile`, `RateLimits` — Pydantic shapes (`records.py`).
+- `ModelRegistry.load_default()` / `load_path(Path)` / `load_auto()` — load packaged **bootstrap** (empty `models[]`) or `DRONE_GRAPH_MODEL_REGISTRY_PATH` / merged JSON after `generate-model-registry`.
+- `resolve_for_tier` / `resolve_for_gap` — routing from gap tier to a non-deprecated entry.
+- `estimate_cost_usd` — rough cost from token counts using registry prices.
+- `generate_registry_file` (`generate.py`) + CLI `drone-graph generate-model-registry` — list models from vendor APIs (env keys), then web-search doc enrichment (Anthropic preferred, else OpenAI); writes JSON for `DRONE_GRAPH_MODEL_REGISTRY_PATH`. **Temporary:** calls LLM + web search **directly**; **future** = same work done by a **Drone**, with **web search** as a **skills marketplace** tool (see `architecture-notes/model-registry.md`).
+
+**Grows into.** Drone-driven discovery of new models and proposed registry updates (reviewed before merge) · optional `dgraph_model_id` override on `Gap` · stricter budget enforcement (Phase 5) · marketplace-backed tools instead of hard-coded vendor web search.
+
+**Depends on.** `gaps` (for `ModelTier`), `drones.providers` (for `Provider` enum alignment).
+
+**Spec.** [`architecture-notes/model-registry.md`](model-registry.md).
+
+---
+
 ## `drones/`
 
 **Purpose.** The drone runtime. Spawn, run to completion, dissolve.
@@ -58,9 +78,9 @@ If you're about to import across a sibling (e.g., `terminal` reaching into `dron
 - `Provider` — enum (`anthropic`, `openai`)
 - `make_client(provider, model) -> ChatClient`
 
-**Grows into.** Skill loading (Phase 4) · self-parameter-setting tool (Phase 4) · budget tracking during run (Phase 5) · skill authoring (Phase 4).
+**Grows into.** Skill loading (Phase 4) · self-parameter-setting tool (Phase 4) · budget tracking during run (Phase 5) · skill authoring (Phase 4) · resolve models via `model_registry`.
 
-**Depends on.** `substrate`, `gaps`, `terminal`, `prompts`.
+**Depends on.** `substrate`, `gaps`, `terminal`, `prompts`, `model_registry`.
 
 ---
 
