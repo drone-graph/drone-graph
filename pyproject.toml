@@ -48,3 +48,6 @@ packages = ["drone_graph"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = [
+    "integration: tests that require a live Neo4j instance",
+]
