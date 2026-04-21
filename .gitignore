@@ -9,3 +9,20 @@ dist/
 build/
 *.egg-info/
 .env
+
+# Root-level scratch folder named `test/` (pytest suite lives in `tests/`, not here)
+/test/
+
+# graphify (knowledge graph outputs + local cache)
+graphify-out/
+.graphify_*
+
+# local Neo4j data (docker-compose volume)
+var/neo4j/
+
+# Cursor — commit project rules/skills; ignore everything else under .cursor/
+.cursor/*
+!.cursor/rules/
+!.cursor/rules/**
+!.cursor/skills/
+!.cursor/skills/**

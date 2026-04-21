@@ -1,11 +1,41 @@
 from __future__ import annotations
 
 import os
+import sys
+from pathlib import Path
 
 import typer
 
 from drone_graph.gaps import Gap
+from drone_graph.model_registry.generate import generate_registry_file
 from drone_graph.substrate import Substrate
+
+_DEFAULT_REGISTRY_OUT = Path("model_registry.json")
+
+_REGISTRY_OUT_OPTION = typer.Option(
+    _DEFAULT_REGISTRY_OUT,
+    "--output",
+    "-o",
+    help="Where to write the generated registry JSON (default: model_registry.json).",
+)
+_VERBOSE_OPTION = typer.Option(
+    False,
+    "--verbose",
+    "-v",
+    help=(
+        "Log enrichment: request payload, each web search query/URL/hit, assistant text previews, "
+        "then full API JSON. Or set DRONE_GRAPH_REGISTRY_VERBOSE=1 in the environment."
+    ),
+)
+_DOC_ENRICH_WEB_SEARCH_OPTION = typer.Option(
+    None,
+    "--doc-enrich-web-search/--no-doc-enrich-web-search",
+    help=(
+        "Use one hosted web search per model (legacy). Default is cached official "
+        "pricing/deprecation pages (no per-model web search). When omitted, "
+        "DRONE_GRAPH_DOC_ENRICH_WEB_SEARCH=1 still enables web search."
+    ),
+)
 
 app = typer.Typer(no_args_is_help=True)
 
@@ -48,6 +78,42 @@ def reset_db() -> None:
     substrate = _substrate()
     substrate.execute_write("MATCH (n) DETACH DELETE n")
     typer.echo("db reset")
+
+
+@app.command("generate-model-registry")
+def generate_model_registry(
+    output: Path = _REGISTRY_OUT_OPTION,
+    verbose: bool = _VERBOSE_OPTION,
+    doc_enrich_web_search: bool | None = _DOC_ENRICH_WEB_SEARCH_OPTION,
+) -> None:
+    """List models, doc enrichment, write JSON. Keys pick enrichment backend.
+
+    **Today:** Default enrichment uses **cached** official vendor docs (HTTP fetch once per
+    provider, TTL on disk). Pass ``--doc-enrich-web-search`` for one hosted web search
+    per model (legacy). **Future:** same work runs as a **Drone**; web search is a skill.
+    See architecture-notes/model-registry.md (section “Current vs future”).
+    """
+    reg_verbose = verbose or os.environ.get("DRONE_GRAPH_REGISTRY_VERBOSE", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+    try:
+        data = generate_registry_file(
+            output=output,
+            show_progress=sys.stderr.isatty(),
+            verbose=reg_verbose,
+            doc_enrich_web_search=doc_enrich_web_search,
+        )
+    except ValueError as e:
+        typer.secho(str(e), err=True, fg=typer.colors.RED)
+        raise typer.Exit(code=1) from e
+
+    typer.echo(
+        f"wrote {output} ({len(data.models)} models). "
+        "Review pricing and tier_defaults before production use."
+    )
 
 
 if __name__ == "__main__":

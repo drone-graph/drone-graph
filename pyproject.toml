@@ -5,12 +5,13 @@ description = "An execution substrate for AI swarms organized as a hivemind."
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
-authors = [{ name = "Dan Porder" }]
+authors = [{ name = "Dan Porder" }, { name = "Abhinav" }]
 dependencies = [
     "anthropic>=0.40.0",
     "neo4j>=5.20.0",
     "openai>=1.50.0",
     "pydantic>=2.8.0",
+    "tqdm>=4.66.0",
     "typer>=0.12.0",
 ]
 
@@ -19,6 +20,7 @@ dev = [
     "mypy>=1.11.0",
     "pytest>=8.3.0",
     "ruff>=0.6.0",
+    "types-tqdm>=4.66.0",
 ]
 
 [project.scripts]
