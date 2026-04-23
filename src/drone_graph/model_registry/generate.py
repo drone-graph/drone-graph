@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import os
 import re
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from anthropic import Anthropic
 from anthropic.types import ModelInfo
@@ -18,9 +18,173 @@ from drone_graph.model_registry.doc_enrich import (
     DEFAULT_OPENAI_DOC_ENRICH_MODEL,
     enrich_models_via_vendor_docs,
 )
-from drone_graph.model_registry.records import ModelRegistryEntry, ModelRegistryFile, RateLimits
+from drone_graph.model_registry.records import (
+    ModelRegistryEntry,
+    ModelRegistryFile,
+    RateLimits,
+)
 
 GRAPH_ID_PREFIX = "dgraph"
+
+
+def default_packaged_registry_json_path() -> Path:
+    """Path to the packaged ``model_registry.json`` (alongside this module)."""
+    return Path(__file__).resolve().parent / "model_registry.json"
+
+
+def enrich_registry_models(
+    entries: list[ModelRegistryEntry],
+    *,
+    show_progress: bool = False,
+    verbose: bool = False,
+    doc_enrich_web_search: bool | None = None,
+    progress_callback: Callable[[list[ModelRegistryEntry]], None] | None = None,
+) -> list[ModelRegistryEntry]:
+    """Run vendor-doc enrichment on ``entries`` (uses vendor API keys from the environment).
+
+    ``doc_enrich_web_search`` is accepted for API compatibility and ignored; routing is
+    provider-specific inside ``doc_enrich`` (OpenAI: Crawl4AI model card + deprecations cache;
+    Anthropic: API row + cached platform.claude.com docs).
+    """
+    _ = doc_enrich_web_search
+    okey_stripped = (os.environ.get("OPENAI_API_KEY") or "").strip()
+    akey_stripped = (os.environ.get("ANTHROPIC_API_KEY") or "").strip()
+    if show_progress:
+        tqdm.write("Enriching registry rows (OpenAI Crawl4AI + deprecations; Anthropic docs)…")
+    if verbose:
+        tqdm.write(
+            "[doc-enrich] verbose logging: full request/response JSON "
+            "(Anthropic web_search traces when that path is used)"
+        )
+    if okey_stripped and akey_stripped:
+        if show_progress:
+            tqdm.write(
+                "Doc-enrich backend: openai "
+                f"({DEFAULT_OPENAI_DOC_ENRICH_MODEL}; both vendor keys set)"
+            )
+        return enrich_models_via_vendor_docs(
+            entries=list(entries),
+            backend="openai",
+            api_key=okey_stripped,
+            model=DEFAULT_OPENAI_DOC_ENRICH_MODEL,
+            show_progress=show_progress,
+            verbose=verbose,
+            openai_vendor_api_key=okey_stripped or None,
+            anthropic_vendor_api_key=akey_stripped or None,
+            progress_callback=progress_callback,
+        )
+    if akey_stripped:
+        return enrich_models_via_vendor_docs(
+            entries=list(entries),
+            backend="anthropic",
+            api_key=akey_stripped,
+            model=DEFAULT_ANTHROPIC_DOC_ENRICH_MODEL,
+            show_progress=show_progress,
+            verbose=verbose,
+            openai_vendor_api_key=okey_stripped or None,
+            anthropic_vendor_api_key=akey_stripped or None,
+            progress_callback=progress_callback,
+        )
+    if okey_stripped:
+        return enrich_models_via_vendor_docs(
+            entries=list(entries),
+            backend="openai",
+            api_key=okey_stripped,
+            model=DEFAULT_OPENAI_DOC_ENRICH_MODEL,
+            show_progress=show_progress,
+            verbose=verbose,
+            openai_vendor_api_key=okey_stripped or None,
+            anthropic_vendor_api_key=None,
+            progress_callback=progress_callback,
+        )
+    msg = "No API key available for doc enrichment. Set OPENAI_API_KEY and/or ANTHROPIC_API_KEY."
+    raise ValueError(msg)
+
+
+def update_registry_file(
+    *,
+    output: Path,
+    show_progress: bool = False,
+    verbose: bool = False,
+    doc_enrich_web_search: bool | None = None,
+) -> ModelRegistryFile:
+    """Re-run doc enrichment on an existing registry file (no vendor list refetch)."""
+    if not output.is_file():
+        msg = f"Registry file not found: {output}. Run `drone-graph model-registry fresh` first."
+        raise ValueError(msg)
+    current = ModelRegistryFile.model_validate_json(output.read_text(encoding="utf-8"))
+    if not current.models:
+        msg = f"Registry has no models: {output}"
+        raise ValueError(msg)
+    enriched_models = enrich_registry_models(
+        list(current.models),
+        show_progress=show_progress,
+        verbose=verbose,
+        doc_enrich_web_search=doc_enrich_web_search,
+        progress_callback=lambda models: _write_registry_snapshot(output, models),
+    )
+    data = finalize_registry(enriched_models)
+    output.write_text(data.model_dump_json(indent=2) + "\n", encoding="utf-8")
+    return data
+
+
+def sync_registry_file(
+    *,
+    output: Path,
+    show_progress: bool = False,
+    verbose: bool = False,
+    doc_enrich_web_search: bool | None = None,
+) -> ModelRegistryFile:
+    """Merge newly listed vendor models into ``output``, then enrich all rows."""
+    if not output.is_file():
+        msg = f"Registry file not found: {output}. Run `drone-graph model-registry fresh` first."
+        raise ValueError(msg)
+    current = ModelRegistryFile.model_validate_json(output.read_text(encoding="utf-8"))
+    existing_keys = {(m.provider, m.vendor_model_id) for m in current.models}
+    merged: list[ModelRegistryEntry] = list(current.models)
+
+    okey = os.environ.get("OPENAI_API_KEY")
+    akey = os.environ.get("ANTHROPIC_API_KEY")
+    openai_ids: list[str] | None = None
+    anthropic_infos: list[ModelInfo] | None = None
+    if show_progress:
+        tqdm.write("Fetching model lists from vendor APIs (merge new ids only)…")
+    if okey and okey.strip():
+        openai_ids = fetch_openai_vendor_model_ids(okey.strip(), broad=True)
+    if akey and akey.strip():
+        anthropic_infos = fetch_anthropic_model_infos_with_details(akey.strip(), broad=True)
+
+    if openai_ids is None and anthropic_infos is None:
+        msg = "No API keys found. Set OPENAI_API_KEY and/or ANTHROPIC_API_KEY."
+        raise ValueError(msg)
+
+    added = 0
+    for vid in openai_ids or []:
+        key = (Provider.openai, vid)
+        if key not in existing_keys:
+            merged.append(_entry_for_openai(vid))
+            existing_keys.add(key)
+            added += 1
+    for info in anthropic_infos or []:
+        key = (Provider.anthropic, info.id)
+        if key not in existing_keys:
+            merged.append(_entry_for_anthropic(info))
+            existing_keys.add(key)
+            added += 1
+    if show_progress:
+        tqdm.write(f"Merged {added} new vendor model row(s); enriching {len(merged)} total…")
+
+    enriched_models = enrich_registry_models(
+        merged,
+        show_progress=show_progress,
+        verbose=verbose,
+        doc_enrich_web_search=doc_enrich_web_search,
+        progress_callback=lambda models: _write_registry_snapshot(output, models),
+    )
+    data = finalize_registry(enriched_models)
+    output.write_text(data.model_dump_json(indent=2) + "\n", encoding="utf-8")
+    return data
+
 
 _OPENAI_DEFAULT_MAX_INPUT = 128_000
 _OPENAI_DEFAULT_MAX_OUTPUT = 16_384
@@ -112,52 +276,98 @@ def is_current_anthropic_model(info: ModelInfo) -> bool:
     return is_anthropic_list_model(info, broad=False)
 
 
-def _openai_capabilities(vendor_model_id: str) -> list[str]:
-    mid = vendor_model_id.lower()
-    caps: list[str] = ["streaming", "tools"]
-    if "4o" in mid or "vision" in mid:
-        caps.append("vision")
-    if "json" in mid or "turbo" in mid or mid.startswith("gpt-4") or mid.startswith("gpt-5"):
-        caps.append("json_mode")
+def _merge_ordered_capability_tags(*groups: list[str]) -> list[str]:
+    """Concatenate tag lists in order, dropping duplicates."""
     seen: set[str] = set()
     out: list[str] = []
-    for c in caps:
+    for group in groups:
+        for s in group:
+            if s not in seen:
+                seen.add(s)
+                out.append(s)
+    return out
+
+
+def _openai_capabilities(vendor_model_id: str) -> list[str]:
+    mid = vendor_model_id.lower()
+    tools = ["tools"]
+    feats: list[str] = ["streaming"]
+    if "4o" in mid or "vision" in mid:
+        feats.append("vision")
+    if "json" in mid or "turbo" in mid or mid.startswith("gpt-4") or mid.startswith("gpt-5"):
+        feats.append("json_mode")
+    seen: set[str] = set()
+    features: list[str] = []
+    for c in feats:
         if c not in seen:
             seen.add(c)
-            out.append(c)
-    return out
+            features.append(c)
+    return _merge_ordered_capability_tags(tools, features)
 
 
 def _anthropic_capabilities(info: ModelInfo) -> list[str]:
     mc = info.capabilities
-    caps: list[str] = ["streaming", "tools"]
+    tools = ["tools"]
+    feats: list[str] = ["streaming"]
     if mc is None:
-        return caps
+        return _merge_ordered_capability_tags(tools, feats)
     if getattr(mc, "image_input", None):
-        caps.append("vision")
+        feats.append("vision")
     if getattr(mc, "pdf_input", None):
-        caps.append("pdf_input")
+        feats.append("pdf_input")
     if getattr(mc, "structured_outputs", None):
-        caps.append("json_mode")
+        feats.append("json_mode")
     if getattr(mc, "thinking", None):
-        caps.append("thinking")
+        feats.append("thinking")
     if getattr(mc, "code_execution", None):
-        caps.append("code_execution")
+        feats.append("code_execution")
     if getattr(mc, "citations", None):
-        caps.append("citations")
+        feats.append("citations")
     if getattr(mc, "batch", None):
-        caps.append("batch")
+        feats.append("batch")
     if getattr(mc, "context_management", None):
-        caps.append("context_management")
+        feats.append("context_management")
     if getattr(mc, "effort", None):
-        caps.append("effort")
+        feats.append("effort")
     seen: set[str] = set()
-    out: list[str] = []
-    for c in caps:
+    features: list[str] = []
+    for c in feats:
         if c not in seen:
             seen.add(c)
-            out.append(c)
-    return out
+            features.append(c)
+    return _merge_ordered_capability_tags(tools, features)
+
+
+def _anthropic_reasoning_effort_levels(info: ModelInfo) -> list[str] | None:
+    mc = info.capabilities
+    if mc is None:
+        return None
+    effort = getattr(mc, "effort", None)
+    if effort is None:
+        return None
+    if hasattr(effort, "model_dump"):
+        raw = cast(dict[str, Any], effort.model_dump(mode="json"))
+    elif isinstance(effort, dict):
+        raw = cast(dict[str, Any], effort)
+    else:
+        return None
+
+    preferred_order = ("low", "medium", "high", "xhigh", "max")
+    out: list[str] = []
+    for key in preferred_order:
+        node = raw.get(key)
+        if isinstance(node, dict) and node.get("supported") is True:
+            out.append(key)
+
+    extras = sorted(
+        k
+        for k, v in raw.items()
+        if k not in {"supported", *preferred_order}
+        and isinstance(v, dict)
+        and v.get("supported") is True
+    )
+    out.extend(extras)
+    return out or None
 
 
 def _iter_sync_pages(page: Any) -> Iterator[Any]:
@@ -194,6 +404,30 @@ def fetch_anthropic_model_infos(api_key: str, *, broad: bool = False) -> list[Mo
     return [by_id[k] for k in sorted(by_id)]
 
 
+def fetch_anthropic_model_detail(api_key: str, model_id: str) -> ModelInfo | None:
+    """Return ``models.retrieve`` payload when the SDK supports it (richer capabilities)."""
+    client = Anthropic(api_key=api_key)
+    retrieve = getattr(client.models, "retrieve", None)
+    if retrieve is None:
+        return None
+    try:
+        return cast(ModelInfo, retrieve(model_id))
+    except Exception:
+        return None
+
+
+def fetch_anthropic_model_infos_with_details(
+    api_key: str, *, broad: bool = False
+) -> list[ModelInfo]:
+    """List models, then merge each id with ``models.retrieve`` when available."""
+    infos = fetch_anthropic_model_infos(api_key, broad=broad)
+    merged: list[ModelInfo] = []
+    for info in infos:
+        detail = fetch_anthropic_model_detail(api_key, info.id)
+        merged.append(detail if detail is not None else info)
+    return merged
+
+
 def _entry_for_openai(vendor_model_id: str) -> ModelRegistryEntry:
     gid = dgraph_model_id(Provider.openai, vendor_model_id)
     return ModelRegistryEntry(
@@ -206,8 +440,7 @@ def _entry_for_openai(vendor_model_id: str) -> ModelRegistryEntry:
         reasoning_effort=None,
         input_price_per_million_usd=0.0,
         output_price_per_million_usd=0.0,
-        cache_read_price_per_million_usd=None,
-        cache_write_price_per_million_usd=None,
+        cache_input_price_per_million_usd=None,
         capabilities=_openai_capabilities(vendor_model_id),
         rate_limits=RateLimits(),
     )
@@ -216,7 +449,12 @@ def _entry_for_openai(vendor_model_id: str) -> ModelRegistryEntry:
 def _entry_for_anthropic(info: ModelInfo) -> ModelRegistryEntry:
     gid = dgraph_model_id(Provider.anthropic, info.id)
     max_in = int(info.max_input_tokens) if info.max_input_tokens is not None else 200_000
+    if max_in == 0:
+        max_in = 200_000
     max_out = int(info.max_tokens) if info.max_tokens is not None else 8192
+    if max_out == 0:
+        max_out = 8192
+    effort_levels = _anthropic_reasoning_effort_levels(info)
     return ModelRegistryEntry(
         dgraph_model_id=gid,
         provider=Provider.anthropic,
@@ -224,11 +462,10 @@ def _entry_for_anthropic(info: ModelInfo) -> ModelRegistryEntry:
         deprecated=False,
         max_input_tokens=max_in,
         max_output_tokens=max_out,
-        reasoning_effort=None,
+        reasoning_effort=effort_levels,
         input_price_per_million_usd=0.0,
         output_price_per_million_usd=0.0,
-        cache_read_price_per_million_usd=None,
-        cache_write_price_per_million_usd=None,
+        cache_input_price_per_million_usd=None,
         capabilities=_anthropic_capabilities(info),
         rate_limits=RateLimits(),
     )
@@ -440,6 +677,14 @@ def finalize_registry(models: list[ModelRegistryEntry]) -> ModelRegistryFile:
     return ModelRegistryFile(tier_defaults=tier_defaults, models=models_sorted)
 
 
+def _write_registry_snapshot(output: Path, models: list[ModelRegistryEntry]) -> None:
+    """Persist an intermediate registry snapshot during model-by-model enrichment."""
+    if not models:
+        return
+    data = finalize_registry(models)
+    output.write_text(data.model_dump_json(indent=2) + "\n", encoding="utf-8")
+
+
 def generate_registry_file(
     *,
     output: Path,
@@ -449,12 +694,12 @@ def generate_registry_file(
 ) -> ModelRegistryFile:
     """Build registry JSON: vendor list APIs, then doc enrichment via direct LLM.
 
-    **Default:** Fetches official pricing/deprecation pages once per provider (cached on
-    disk) and enriches each model from excerpts—**no** per-model hosted web search.
+    **OpenAI rows:** Cached ``developers.openai.com`` deprecations plus **Crawl4AI** per model
+    for the official API model card (no OpenAI hosted ``web_search``).
 
-    **Optional:** Pass ``doc_enrich_web_search=True`` (or set env
-    ``DRONE_GRAPH_DOC_ENRICH_WEB_SEARCH=1`` when this argument is ``None``) to use the
-    legacy one-web-search-per-model path.
+    **Anthropic rows:** Built from ``models.list`` + ``models.retrieve``; enrichment merges
+    cached ``platform.claude.com`` overview and pricing (OpenAI ``gpt-5-mini`` when both keys
+    exist, else Anthropic Haiku).
 
     **Temporary architecture:** enrichment lives in ``doc_enrich``. **Future:** a
     **Drone** with marketplace **skills** (see ``architecture-notes/model-registry.md``).
@@ -470,7 +715,7 @@ def generate_registry_file(
     if okey and okey.strip():
         openai_ids = fetch_openai_vendor_model_ids(okey.strip(), broad=True)
     if akey and akey.strip():
-        anthropic_infos = fetch_anthropic_model_infos(akey.strip(), broad=True)
+        anthropic_infos = fetch_anthropic_model_infos_with_details(akey.strip(), broad=True)
 
     if openai_ids is None and anthropic_infos is None:
         msg = "No API keys found. Set OPENAI_API_KEY and/or ANTHROPIC_API_KEY in the environment."
@@ -482,45 +727,14 @@ def generate_registry_file(
         show_progress=show_progress,
     )
 
-    okey_stripped = (okey or "").strip()
-    akey_stripped = (akey or "").strip()
-    if show_progress:
-        ws = doc_enrich_web_search
-        if ws is None:
-            ws = os.environ.get("DRONE_GRAPH_DOC_ENRICH_WEB_SEARCH", "").strip().lower() in (
-                "1",
-                "true",
-                "yes",
-                "on",
-            )
-        mode = "web search / model" if ws else "cached vendor docs"
-        tqdm.write(f"Enriching from vendor docs ({mode})…")
-    if verbose:
-        tqdm.write(
-            "[doc-enrich] verbose logging: full request/response JSON "
-            "(web-search path includes per-step search trace)"
-        )
-    if akey_stripped:
-        enriched = enrich_models_via_vendor_docs(
-            entries=list(data.models),
-            backend="anthropic",
-            api_key=akey_stripped,
-            model=DEFAULT_ANTHROPIC_DOC_ENRICH_MODEL,
-            show_progress=show_progress,
-            verbose=verbose,
-            use_web_search=doc_enrich_web_search,
-        )
-    else:
-        enriched = enrich_models_via_vendor_docs(
-            entries=list(data.models),
-            backend="openai",
-            api_key=okey_stripped,
-            model=DEFAULT_OPENAI_DOC_ENRICH_MODEL,
-            show_progress=show_progress,
-            verbose=verbose,
-            use_web_search=doc_enrich_web_search,
-        )
-    data = finalize_registry(enriched)
+    enriched_models = enrich_registry_models(
+        list(data.models),
+        show_progress=show_progress,
+        verbose=verbose,
+        doc_enrich_web_search=doc_enrich_web_search,
+        progress_callback=lambda models: _write_registry_snapshot(output, models),
+    )
+    data = finalize_registry(enriched_models)
 
     output.write_text(data.model_dump_json(indent=2) + "\n", encoding="utf-8")
     return data

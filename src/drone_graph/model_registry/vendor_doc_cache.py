@@ -1,9 +1,3 @@
-"""Fetch and cache official vendor doc pages for model-registry enrichment.
-
-Static HTTP fetch + on-disk TTL cache (no per-model web search). Uses a browser-like
-User-Agent because some doc sites return 403 for default Python clients.
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -24,21 +18,21 @@ _USER_AGENT = (
     "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 DroneGraphRegistry/0.1"
 )
 
-# Small allowlist: pricing + deprecations cover most registry fields.
+# OpenAI: single deprecations page (once); per-model cards use Crawl4AI in doc_enrich.
 _OPENAI_DOC_URLS: tuple[str, ...] = (
-    "https://platform.openai.com/docs/pricing/",
-    "https://platform.openai.com/docs/deprecations/",
+    "https://developers.openai.com/api/docs/deprecations",
 )
 
+# Anthropic: Claude Console docs (overview + pricing table).
 _ANTHROPIC_DOC_URLS: tuple[str, ...] = (
-    "https://docs.anthropic.com/en/docs/about-claude/pricing",
-    "https://docs.anthropic.com/en/docs/resources/model-deprecations",
+    "https://platform.claude.com/docs/en/about-claude/models/overview",
+    "https://platform.claude.com/docs/en/about-claude/pricing",
 )
 
 # After HTML→text, cap each page so concatenated corpus stays bounded.
 _MAX_TEXT_CHARS_PER_URL = 350_000
-# If combined text is shorter than this, callers should fall back to web search.
-MIN_USABLE_CORPUS_CHARS = 8_000
+# If combined text is shorter than this, callers may fall back to another strategy.
+MIN_USABLE_CORPUS_CHARS = 4_000
 _FETCH_TIMEOUT_SEC = 45
 
 
@@ -109,6 +103,33 @@ def html_to_text(html: str) -> str:
     return p.text()
 
 
+_BOILERPLATE_LINE = re.compile(
+    r"(?i)^(accept all(\s+cookies)?|reject all|manage cookies|we value your privacy|"
+    r"subscribe to(\s+our)?(\s+newsletter)?|sign up for|cookie policy|privacy policy|"
+    r"terms of service|terms of use|skip to content|toggle menu)\s*$"
+)
+
+
+def clean_vendor_doc_plaintext(text: str) -> str:
+    """Drop obvious nav/cookie boilerplate and low-information lines from scraped docs."""
+    lines_out: list[str] = []
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            lines_out.append("")
+            continue
+        if _BOILERPLATE_LINE.match(line):
+            continue
+        alnum = sum(c.isalnum() for c in line)
+        ratio = alnum / max(len(line), 1)
+        if len(line) > 100 and ratio < 0.12:
+            continue
+        lines_out.append(raw_line.rstrip())
+    joined = "\n".join(lines_out)
+    joined = re.sub(r"\n{4,}", "\n\n\n", joined)
+    return joined.strip()
+
+
 def _http_get(url: str) -> bytes:
     req = Request(url, headers={"User-Agent": _USER_AGENT}, method="GET")
     with urlopen(req, timeout=_FETCH_TIMEOUT_SEC) as resp:
@@ -143,14 +164,14 @@ def fetch_and_store_url(
     path = _cache_file_for_url(cache_root, provider, url)
     cached = _read_cached_text(path, max_age_seconds=max_age_seconds)
     if cached is not None:
-        return cached
+        return clean_vendor_doc_plaintext(cached)
     try:
         body = _http_get(url)
     except (HTTPError, URLError, TimeoutError, OSError) as e:
         msg = f"GET {url!r} failed: {e}"
         raise RuntimeError(msg) from e
     html = body.decode("utf-8", errors="replace")
-    text = html_to_text(html)
+    text = clean_vendor_doc_plaintext(html_to_text(html))
     if len(text) > _MAX_TEXT_CHARS_PER_URL:
         text = text[:_MAX_TEXT_CHARS_PER_URL] + "\n\n[truncated]\n"
     path.write_text(text, encoding="utf-8")
@@ -189,6 +210,87 @@ def _merge_intervals(intervals: list[tuple[int, int]]) -> list[tuple[int, int]]:
         else:
             merged.append((start, end))
     return merged
+
+
+def bounded_source_section(corpus: str, source_url: str, *, max_chars: int) -> str:
+    """Return plain text for one cached URL block (between ``=== SOURCE: url ===`` headers)."""
+    marker = f"=== SOURCE: {source_url}"
+    start = corpus.find(marker)
+    if start < 0:
+        return ""
+    next_hdr = corpus.find("\n=== SOURCE:", start + len(marker))
+    end = len(corpus) if next_hdr < 0 else next_hdr
+    chunk = corpus[start:end].strip()
+    if len(chunk) > max_chars:
+        chunk = chunk[:max_chars] + "\n\n[section truncated]\n"
+    return chunk
+
+
+def excerpt_for_cached_enrichment(
+    corpus: str,
+    vendor_model_id: str,
+    *,
+    provider: Provider,
+    max_chars: int = 36_000,
+) -> str:
+    """Bounded corpus slice for LLM enrichment (pricing + deprecations sections per provider)."""
+    if provider == Provider.openai:
+        dep = bounded_source_section(
+            corpus,
+            "https://developers.openai.com/api/docs/deprecations",
+            max_chars=14_000,
+        )
+        reserved = len(dep) + 300
+        core_budget = max(6000, max_chars - reserved)
+        core = excerpt_for_model_id(
+            corpus,
+            vendor_model_id,
+            max_chars=core_budget,
+            window=16_000,
+        )
+        parts: list[str] = [core]
+        if dep:
+            parts.append(
+                "=== OPENAI API DEPRECATIONS (cached; authoritative for retired models) ===\n"
+                + dep
+            )
+        merged = "\n\n".join(parts)
+        return merged[:max_chars]
+
+    if provider == Provider.anthropic:
+        pr = bounded_source_section(
+            corpus,
+            "https://platform.claude.com/docs/en/about-claude/pricing",
+            max_chars=16_000,
+        )
+        overview = bounded_source_section(
+            corpus,
+            "https://platform.claude.com/docs/en/about-claude/models/overview",
+            max_chars=14_000,
+        )
+        reserved = len(pr) + len(overview) + 400
+        core_budget = max(6000, max_chars - reserved)
+        core = excerpt_for_model_id(
+            corpus,
+            vendor_model_id,
+            max_chars=core_budget,
+            window=16_000,
+        )
+        parts = [core]
+        if overview:
+            parts.append(
+                "=== CLAUDE MODELS OVERVIEW (cached; capabilities & deprecation notes) ===\n"
+                + overview
+            )
+        if pr:
+            parts.append(
+                "=== CLAUDE PRICING (cached; Base Input / cache writes / cache hits / output) ===\n"
+                + pr
+            )
+        merged = "\n\n".join(parts)
+        return merged[:max_chars]
+
+    return excerpt_for_model_id(corpus, vendor_model_id, max_chars=max_chars, window=12_000)
 
 
 def excerpt_for_model_id(

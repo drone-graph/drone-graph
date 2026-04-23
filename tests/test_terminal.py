@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-import sys
-
 import pytest
 
-from drone_graph.terminal import Terminal, TerminalTimeout
+from drone_graph.terminal import Terminal, TerminalTimeout, is_terminal_supported
 
 pytestmark = pytest.mark.skipif(
-    sys.platform == "win32",
-    reason="Terminal PTY uses POSIX select(); not supported on Windows CI/dev",
+    not is_terminal_supported(),
+    reason="bash not available (install Git for Windows or add bash to PATH)",
 )
 
 

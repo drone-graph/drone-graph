@@ -9,19 +9,15 @@ dist/
 build/
 *.egg-info/
 .env
+.env.local
+eenv
 .pytest_cache/
 var/
 
-# Root-level scratch folder named `test/` (pytest suite lives in `tests/`, not here)
-/test/
 
 # graphify (knowledge graph outputs + local cache)
 graphify-out/
 .graphify_*
 
 # Cursor — commit project rules/skills; ignore everything else under .cursor/
-.cursor/*
-!.cursor/rules/
-!.cursor/rules/**
-!.cursor/skills/
-!.cursor/skills/**
+.cursor/

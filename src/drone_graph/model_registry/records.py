@@ -1,9 +1,54 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from drone_graph.drones.providers import Provider
 from drone_graph.gaps.records import ModelTier
+
+
+def normalize_capabilities_value(v: object) -> list[str]:
+    """Coerce registry ``capabilities`` to a single ordered, deduped string list.
+
+    Accepts:
+    - ``list[str]`` (already flat)
+    - legacy ``{"tools": [...], "features": [...]}`` (tools first, then features)
+    """
+    if v is None:
+        return []
+    if isinstance(v, list):
+        out: list[str] = []
+        seen: set[str] = set()
+        for item in v:
+            if not isinstance(item, str):
+                continue
+            s = item.strip()
+            if not s or s in seen:
+                continue
+            seen.add(s)
+            out.append(s)
+        return out
+    if isinstance(v, dict):
+        tools_raw = v.get("tools")
+        feats_raw = v.get("features")
+        tools = (
+            [str(x).strip() for x in tools_raw if str(x).strip()]
+            if isinstance(tools_raw, list)
+            else []
+        )
+        feats = (
+            [str(x).strip() for x in feats_raw if str(x).strip()]
+            if isinstance(feats_raw, list)
+            else []
+        )
+        merged = [*tools, *feats]
+        seen: set[str] = set()
+        out: list[str] = []
+        for s in merged:
+            if s not in seen:
+                seen.add(s)
+                out.append(s)
+        return out
+    return []
 
 
 class RateLimits(BaseModel):
@@ -25,27 +70,57 @@ class ModelRegistryEntry(BaseModel):
     )
     max_input_tokens: int = Field(..., ge=0)
     max_output_tokens: int = Field(..., ge=0)
-    reasoning_effort: str | None = Field(
+    reasoning_effort: list[str] | None = Field(
         default=None,
-        description="Model-specific; null when not applicable",
+        description=(
+            "Same JSON key for all vendors: array of supported effort levels for this model. "
+            "OpenAI: API-documented Responses reasoning effort values when available. "
+            "Anthropic: Claude API effort levels (e.g. low, medium, high, xhigh, max)."
+        ),
     )
     input_price_per_million_usd: float = Field(..., ge=0.0)
     output_price_per_million_usd: float = Field(..., ge=0.0)
-    cache_read_price_per_million_usd: float | None = Field(
+    cache_input_price_per_million_usd: float | None = Field(
         default=None,
         ge=0.0,
-        description="USD per 1M cached-read tokens; null if unused",
-    )
-    cache_write_price_per_million_usd: float | None = Field(
-        default=None,
-        ge=0.0,
-        description="USD per 1M cached-write tokens; null if unused",
+        description="USD per 1M cached input tokens (prompt cache hits); null if unused",
     )
     capabilities: list[str] = Field(
         default_factory=list,
-        description="Multi-valued capability flags (e.g. tools, vision, streaming)",
+        description=(
+            "Single list of capability tags (tool surfaces such as ``tools`` plus "
+            "``streaming``, ``vision``, ``json_mode``, Anthropic flags, etc.). "
+            "Order: legacy ``tools`` entries first, then ``features``, then deduped."
+        ),
     )
     rate_limits: RateLimits = Field(default_factory=RateLimits)
+
+    @field_validator("capabilities", mode="before")
+    @classmethod
+    def _capabilities_coerce(cls, v: object) -> object:
+        return normalize_capabilities_value(v)
+
+    @field_validator("reasoning_effort", mode="before")
+    @classmethod
+    def _coerce_reasoning_effort(cls, v: object) -> object:
+        if v is None:
+            return None
+        if isinstance(v, str):
+            s = v.strip()
+            return [s] if s else None
+        if isinstance(v, list):
+            out: list[str] = []
+            seen: set[str] = set()
+            for item in v:
+                if not isinstance(item, str):
+                    continue
+                s = item.strip()
+                if not s or s in seen:
+                    continue
+                seen.add(s)
+                out.append(s)
+            return out or None
+        return None
 
 
 class ModelRegistryFile(BaseModel):
@@ -53,7 +128,7 @@ class ModelRegistryFile(BaseModel):
         ...,
         description=(
             "Maps each ModelTier to dgraph_model_id when models[] is non-empty; "
-            "must be {} when models[] is empty (bootstrap before generate-model-registry)."
+            "must be {} when models[] is empty (bootstrap before model-registry fresh)."
         ),
     )
     models: list[ModelRegistryEntry]
@@ -64,7 +139,7 @@ class ModelRegistryFile(BaseModel):
             if self.tier_defaults:
                 raise ValueError(
                     "Bootstrap state requires models[] empty and tier_defaults {}. "
-                    "Run `drone-graph generate-model-registry` to populate, then set "
+                    "Run `drone-graph model-registry fresh` to populate, then set "
                     "tier_defaults to dgraph_model_ids that exist in models[]."
                 )
             return self

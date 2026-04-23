@@ -1,4 +1,1402 @@
 {
-  "tier_defaults": {},
-  "models": []
+  "tier_defaults": {
+    "cheap": "dgraph-openai-gpt-4o-mini",
+    "standard": "dgraph-openai-gpt-4o",
+    "frontier": "dgraph-anthropic-claude-sonnet-4-6"
+  },
+  "models": [
+    {
+      "dgraph_model_id": "dgraph-anthropic-claude-haiku-4-5-20251001",
+      "provider": "anthropic",
+      "vendor_model_id": "claude-haiku-4-5-20251001",
+      "deprecated": false,
+      "max_input_tokens": 200000,
+      "max_output_tokens": 64000,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 1.0,
+      "output_price_per_million_usd": 5.0,
+      "cache_input_price_per_million_usd": 0.1,
+      "capabilities": [
+        "tools",
+        "streaming",
+        "vision",
+        "pdf_input",
+        "json_mode",
+        "thinking",
+        "code_execution",
+        "citations",
+        "batch",
+        "context_management",
+        "effort"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-anthropic-claude-opus-4-1-20250805",
+      "provider": "anthropic",
+      "vendor_model_id": "claude-opus-4-1-20250805",
+      "deprecated": false,
+      "max_input_tokens": 200000,
+      "max_output_tokens": 32000,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 15.0,
+      "output_price_per_million_usd": 75.0,
+      "cache_input_price_per_million_usd": 1.5,
+      "capabilities": [
+        "tools",
+        "streaming",
+        "vision",
+        "pdf_input",
+        "json_mode",
+        "thinking",
+        "code_execution",
+        "citations",
+        "batch",
+        "context_management",
+        "effort"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-anthropic-claude-opus-4-5-20251101",
+      "provider": "anthropic",
+      "vendor_model_id": "claude-opus-4-5-20251101",
+      "deprecated": false,
+      "max_input_tokens": 200000,
+      "max_output_tokens": 64000,
+      "reasoning_effort": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "input_price_per_million_usd": 5.0,
+      "output_price_per_million_usd": 25.0,
+      "cache_input_price_per_million_usd": 0.5,
+      "capabilities": [
+        "tools",
+        "streaming",
+        "vision",
+        "pdf_input",
+        "json_mode",
+        "thinking",
+        "code_execution",
+        "citations",
+        "batch",
+        "context_management",
+        "effort"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-anthropic-claude-opus-4-6",
+      "provider": "anthropic",
+      "vendor_model_id": "claude-opus-4-6",
+      "deprecated": false,
+      "max_input_tokens": 1000000,
+      "max_output_tokens": 128000,
+      "reasoning_effort": [
+        "low",
+        "medium",
+        "high",
+        "max"
+      ],
+      "input_price_per_million_usd": 5.0,
+      "output_price_per_million_usd": 25.0,
+      "cache_input_price_per_million_usd": 0.5,
+      "capabilities": [
+        "tools",
+        "streaming",
+        "vision",
+        "pdf_input",
+        "json_mode",
+        "thinking",
+        "code_execution",
+        "citations",
+        "batch",
+        "context_management",
+        "effort"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-anthropic-claude-opus-4-7",
+      "provider": "anthropic",
+      "vendor_model_id": "claude-opus-4-7",
+      "deprecated": false,
+      "max_input_tokens": 1000000,
+      "max_output_tokens": 128000,
+      "reasoning_effort": [
+        "low",
+        "medium",
+        "high",
+        "max"
+      ],
+      "input_price_per_million_usd": 5.0,
+      "output_price_per_million_usd": 25.0,
+      "cache_input_price_per_million_usd": 0.5,
+      "capabilities": [
+        "tools",
+        "streaming",
+        "vision",
+        "pdf_input",
+        "json_mode",
+        "thinking",
+        "code_execution",
+        "citations",
+        "batch",
+        "context_management",
+        "effort"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-anthropic-claude-sonnet-4-5-20250929",
+      "provider": "anthropic",
+      "vendor_model_id": "claude-sonnet-4-5-20250929",
+      "deprecated": false,
+      "max_input_tokens": 1000000,
+      "max_output_tokens": 64000,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 3.0,
+      "output_price_per_million_usd": 15.0,
+      "cache_input_price_per_million_usd": 0.3,
+      "capabilities": [
+        "tools",
+        "streaming",
+        "vision",
+        "pdf_input",
+        "json_mode",
+        "thinking",
+        "code_execution",
+        "citations",
+        "batch",
+        "context_management",
+        "effort"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-anthropic-claude-sonnet-4-6",
+      "provider": "anthropic",
+      "vendor_model_id": "claude-sonnet-4-6",
+      "deprecated": false,
+      "max_input_tokens": 1000000,
+      "max_output_tokens": 128000,
+      "reasoning_effort": [
+        "low",
+        "medium",
+        "high",
+        "max"
+      ],
+      "input_price_per_million_usd": 3.0,
+      "output_price_per_million_usd": 15.0,
+      "cache_input_price_per_million_usd": 0.3,
+      "capabilities": [
+        "tools",
+        "streaming",
+        "vision",
+        "pdf_input",
+        "json_mode",
+        "thinking",
+        "code_execution",
+        "citations",
+        "batch",
+        "context_management",
+        "effort"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-openai-chatgpt-image-latest",
+      "provider": "openai",
+      "vendor_model_id": "chatgpt-image-latest",
+      "deprecated": false,
+      "max_input_tokens": 128000,
+      "max_output_tokens": 16384,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 8.0,
+      "output_price_per_million_usd": 32.0,
+      "cache_input_price_per_million_usd": 2.0,
+      "capabilities": [
+        "tools",
+        "streaming"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-openai-gpt-3-5-turbo",
+      "provider": "openai",
+      "vendor_model_id": "gpt-3.5-turbo",
+      "deprecated": false,
+      "max_input_tokens": 16385,
+      "max_output_tokens": 4096,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 0.5,
+      "output_price_per_million_usd": 1.5,
+      "cache_input_price_per_million_usd": null,
+      "capabilities": [
+        "tools",
+        "streaming",
+        "json_mode"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-openai-gpt-3-5-turbo-16k",
+      "provider": "openai",
+      "vendor_model_id": "gpt-3.5-turbo-16k",
+      "deprecated": false,
+      "max_input_tokens": 128000,
+      "max_output_tokens": 16384,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 0.0,
+      "output_price_per_million_usd": 0.0,
+      "cache_input_price_per_million_usd": null,
+      "capabilities": [
+        "tools",
+        "streaming",
+        "json_mode"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-openai-gpt-3-5-turbo-instruct-0914",
+      "provider": "openai",
+      "vendor_model_id": "gpt-3.5-turbo-instruct-0914",
+      "deprecated": false,
+      "max_input_tokens": 128000,
+      "max_output_tokens": 16384,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 0.0,
+      "output_price_per_million_usd": 0.0,
+      "cache_input_price_per_million_usd": null,
+      "capabilities": [
+        "tools",
+        "streaming",
+        "json_mode"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-openai-gpt-4",
+      "provider": "openai",
+      "vendor_model_id": "gpt-4",
+      "deprecated": false,
+      "max_input_tokens": 8192,
+      "max_output_tokens": 8192,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 30.0,
+      "output_price_per_million_usd": 60.0,
+      "cache_input_price_per_million_usd": null,
+      "capabilities": [
+        "tools",
+        "streaming",
+        "json_mode"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-openai-gpt-4-1",
+      "provider": "openai",
+      "vendor_model_id": "gpt-4.1",
+      "deprecated": false,
+      "max_input_tokens": 1047576,
+      "max_output_tokens": 32768,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 2.0,
+      "output_price_per_million_usd": 8.0,
+      "cache_input_price_per_million_usd": 0.5,
+      "capabilities": [
+        "tools",
+        "streaming",
+        "json_mode"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-openai-gpt-4-1-2025-04-14",
+      "provider": "openai",
+      "vendor_model_id": "gpt-4.1-2025-04-14",
+      "deprecated": false,
+      "max_input_tokens": 1047576,
+      "max_output_tokens": 32768,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 2.0,
+      "output_price_per_million_usd": 8.0,
+      "cache_input_price_per_million_usd": 0.5,
+      "capabilities": [
+        "tools",
+        "streaming",
+        "json_mode"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-openai-gpt-4-1-mini",
+      "provider": "openai",
+      "vendor_model_id": "gpt-4.1-mini",
+      "deprecated": false,
+      "max_input_tokens": 1047576,
+      "max_output_tokens": 32768,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 0.4,
+      "output_price_per_million_usd": 1.6,
+      "cache_input_price_per_million_usd": 0.1,
+      "capabilities": [
+        "tools",
+        "streaming",
+        "json_mode"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-openai-gpt-4-1-mini-2025-04-14",
+      "provider": "openai",
+      "vendor_model_id": "gpt-4.1-mini-2025-04-14",
+      "deprecated": false,
+      "max_input_tokens": 1047576,
+      "max_output_tokens": 32768,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 0.4,
+      "output_price_per_million_usd": 1.6,
+      "cache_input_price_per_million_usd": 0.1,
+      "capabilities": [
+        "tools",
+        "streaming",
+        "json_mode"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-openai-gpt-4-1-nano-2025-04-14",
+      "provider": "openai",
+      "vendor_model_id": "gpt-4.1-nano-2025-04-14",
+      "deprecated": false,
+      "max_input_tokens": 1047576,
+      "max_output_tokens": 32768,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 0.1,
+      "output_price_per_million_usd": 0.4,
+      "cache_input_price_per_million_usd": 0.025,
+      "capabilities": [
+        "tools",
+        "streaming",
+        "json_mode"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-openai-gpt-4-turbo-2024-04-09",
+      "provider": "openai",
+      "vendor_model_id": "gpt-4-turbo-2024-04-09",
+      "deprecated": false,
+      "max_input_tokens": 128000,
+      "max_output_tokens": 4096,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 10.0,
+      "output_price_per_million_usd": 30.0,
+      "cache_input_price_per_million_usd": null,
+      "capabilities": [
+        "tools",
+        "streaming",
+        "json_mode"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-openai-gpt-4o",
+      "provider": "openai",
+      "vendor_model_id": "gpt-4o",
+      "deprecated": false,
+      "max_input_tokens": 128000,
+      "max_output_tokens": 16384,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 2.5,
+      "output_price_per_million_usd": 10.0,
+      "cache_input_price_per_million_usd": 1.25,
+      "capabilities": [
+        "tools",
+        "streaming",
+        "vision",
+        "json_mode"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-openai-gpt-4o-2024-08-06",
+      "provider": "openai",
+      "vendor_model_id": "gpt-4o-2024-08-06",
+      "deprecated": false,
+      "max_input_tokens": 128000,
+      "max_output_tokens": 16384,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 2.5,
+      "output_price_per_million_usd": 10.0,
+      "cache_input_price_per_million_usd": 1.25,
+      "capabilities": [
+        "tools",
+        "streaming",
+        "vision",
+        "json_mode"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-openai-gpt-4o-2024-11-20",
+      "provider": "openai",
+      "vendor_model_id": "gpt-4o-2024-11-20",
+      "deprecated": false,
+      "max_input_tokens": 128000,
+      "max_output_tokens": 16384,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 2.5,
+      "output_price_per_million_usd": 10.0,
+      "cache_input_price_per_million_usd": 1.25,
+      "capabilities": [
+        "tools",
+        "streaming",
+        "vision",
+        "json_mode"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-openai-gpt-4o-mini",
+      "provider": "openai",
+      "vendor_model_id": "gpt-4o-mini",
+      "deprecated": false,
+      "max_input_tokens": 128000,
+      "max_output_tokens": 16384,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 0.15,
+      "output_price_per_million_usd": 0.6,
+      "cache_input_price_per_million_usd": 0.075,
+      "capabilities": [
+        "tools",
+        "streaming",
+        "vision",
+        "json_mode"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-openai-gpt-4o-mini-2024-07-18",
+      "provider": "openai",
+      "vendor_model_id": "gpt-4o-mini-2024-07-18",
+      "deprecated": false,
+      "max_input_tokens": 128000,
+      "max_output_tokens": 16384,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 0.15,
+      "output_price_per_million_usd": 0.6,
+      "cache_input_price_per_million_usd": 0.075,
+      "capabilities": [
+        "tools",
+        "streaming",
+        "vision",
+        "json_mode"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-openai-gpt-4o-mini-search-preview",
+      "provider": "openai",
+      "vendor_model_id": "gpt-4o-mini-search-preview",
+      "deprecated": false,
+      "max_input_tokens": 128000,
+      "max_output_tokens": 16384,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 0.15,
+      "output_price_per_million_usd": 0.6,
+      "cache_input_price_per_million_usd": null,
+      "capabilities": [
+        "tools",
+        "streaming",
+        "vision",
+        "json_mode"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-openai-gpt-4o-search-preview",
+      "provider": "openai",
+      "vendor_model_id": "gpt-4o-search-preview",
+      "deprecated": false,
+      "max_input_tokens": 128000,
+      "max_output_tokens": 16384,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 2.5,
+      "output_price_per_million_usd": 10.0,
+      "cache_input_price_per_million_usd": null,
+      "capabilities": [
+        "tools",
+        "streaming",
+        "vision",
+        "json_mode"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-openai-gpt-5",
+      "provider": "openai",
+      "vendor_model_id": "gpt-5",
+      "deprecated": false,
+      "max_input_tokens": 400000,
+      "max_output_tokens": 128000,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 1.25,
+      "output_price_per_million_usd": 10.0,
+      "cache_input_price_per_million_usd": 0.125,
+      "capabilities": [
+        "tools",
+        "streaming",
+        "json_mode"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-openai-gpt-5-1",
+      "provider": "openai",
+      "vendor_model_id": "gpt-5.1",
+      "deprecated": false,
+      "max_input_tokens": 400000,
+      "max_output_tokens": 128000,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 1.25,
+      "output_price_per_million_usd": 10.0,
+      "cache_input_price_per_million_usd": 0.125,
+      "capabilities": [
+        "tools",
+        "streaming",
+        "json_mode"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-openai-gpt-5-1-2025-11-13",
+      "provider": "openai",
+      "vendor_model_id": "gpt-5.1-2025-11-13",
+      "deprecated": false,
+      "max_input_tokens": 400000,
+      "max_output_tokens": 128000,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 1.25,
+      "output_price_per_million_usd": 10.0,
+      "cache_input_price_per_million_usd": 0.125,
+      "capabilities": [
+        "tools",
+        "streaming",
+        "json_mode"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-openai-gpt-5-2",
+      "provider": "openai",
+      "vendor_model_id": "gpt-5.2",
+      "deprecated": false,
+      "max_input_tokens": 400000,
+      "max_output_tokens": 128000,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 1.75,
+      "output_price_per_million_usd": 14.0,
+      "cache_input_price_per_million_usd": 0.175,
+      "capabilities": [
+        "tools",
+        "streaming",
+        "json_mode"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-openai-gpt-5-2-2025-12-11",
+      "provider": "openai",
+      "vendor_model_id": "gpt-5.2-2025-12-11",
+      "deprecated": false,
+      "max_input_tokens": 400000,
+      "max_output_tokens": 128000,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 1.75,
+      "output_price_per_million_usd": 14.0,
+      "cache_input_price_per_million_usd": 0.175,
+      "capabilities": [
+        "tools",
+        "streaming",
+        "json_mode"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-openai-gpt-5-2-chat-latest",
+      "provider": "openai",
+      "vendor_model_id": "gpt-5.2-chat-latest",
+      "deprecated": false,
+      "max_input_tokens": 128000,
+      "max_output_tokens": 16384,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 1.75,
+      "output_price_per_million_usd": 14.0,
+      "cache_input_price_per_million_usd": 0.175,
+      "capabilities": [
+        "tools",
+        "streaming",
+        "json_mode"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-openai-gpt-5-2-pro",
+      "provider": "openai",
+      "vendor_model_id": "gpt-5.2-pro",
+      "deprecated": false,
+      "max_input_tokens": 400000,
+      "max_output_tokens": 128000,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 21.0,
+      "output_price_per_million_usd": 168.0,
+      "cache_input_price_per_million_usd": null,
+      "capabilities": [
+        "tools",
+        "streaming",
+        "json_mode"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-openai-gpt-5-2-pro-2025-12-11",
+      "provider": "openai",
+      "vendor_model_id": "gpt-5.2-pro-2025-12-11",
+      "deprecated": false,
+      "max_input_tokens": 400000,
+      "max_output_tokens": 128000,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 21.0,
+      "output_price_per_million_usd": 168.0,
+      "cache_input_price_per_million_usd": null,
+      "capabilities": [
+        "tools",
+        "streaming",
+        "json_mode"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-openai-gpt-5-2025-08-07",
+      "provider": "openai",
+      "vendor_model_id": "gpt-5-2025-08-07",
+      "deprecated": false,
+      "max_input_tokens": 400000,
+      "max_output_tokens": 128000,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 1.25,
+      "output_price_per_million_usd": 10.0,
+      "cache_input_price_per_million_usd": 0.125,
+      "capabilities": [
+        "tools",
+        "streaming",
+        "json_mode"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-openai-gpt-5-3-chat-latest",
+      "provider": "openai",
+      "vendor_model_id": "gpt-5.3-chat-latest",
+      "deprecated": false,
+      "max_input_tokens": 128000,
+      "max_output_tokens": 16384,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 1.75,
+      "output_price_per_million_usd": 14.0,
+      "cache_input_price_per_million_usd": 0.175,
+      "capabilities": [
+        "tools",
+        "streaming",
+        "json_mode"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-openai-gpt-5-3-codex",
+      "provider": "openai",
+      "vendor_model_id": "gpt-5.3-codex",
+      "deprecated": false,
+      "max_input_tokens": 400000,
+      "max_output_tokens": 128000,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 1.75,
+      "output_price_per_million_usd": 14.0,
+      "cache_input_price_per_million_usd": 0.175,
+      "capabilities": [
+        "tools",
+        "streaming",
+        "json_mode"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-openai-gpt-5-4",
+      "provider": "openai",
+      "vendor_model_id": "gpt-5.4",
+      "deprecated": false,
+      "max_input_tokens": 1050000,
+      "max_output_tokens": 128000,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 2.5,
+      "output_price_per_million_usd": 15.0,
+      "cache_input_price_per_million_usd": 0.25,
+      "capabilities": [
+        "tools",
+        "streaming",
+        "json_mode"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-openai-gpt-5-4-2026-03-05",
+      "provider": "openai",
+      "vendor_model_id": "gpt-5.4-2026-03-05",
+      "deprecated": false,
+      "max_input_tokens": 1050000,
+      "max_output_tokens": 128000,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 2.5,
+      "output_price_per_million_usd": 15.0,
+      "cache_input_price_per_million_usd": 0.25,
+      "capabilities": [
+        "tools",
+        "streaming",
+        "json_mode"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-openai-gpt-5-4-mini",
+      "provider": "openai",
+      "vendor_model_id": "gpt-5.4-mini",
+      "deprecated": false,
+      "max_input_tokens": 400000,
+      "max_output_tokens": 128000,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 0.75,
+      "output_price_per_million_usd": 4.5,
+      "cache_input_price_per_million_usd": 0.075,
+      "capabilities": [
+        "tools",
+        "streaming",
+        "json_mode"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-openai-gpt-5-4-mini-2026-03-17",
+      "provider": "openai",
+      "vendor_model_id": "gpt-5.4-mini-2026-03-17",
+      "deprecated": false,
+      "max_input_tokens": 400000,
+      "max_output_tokens": 128000,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 0.75,
+      "output_price_per_million_usd": 4.5,
+      "cache_input_price_per_million_usd": 0.075,
+      "capabilities": [
+        "tools",
+        "streaming",
+        "json_mode"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-openai-gpt-5-4-nano",
+      "provider": "openai",
+      "vendor_model_id": "gpt-5.4-nano",
+      "deprecated": false,
+      "max_input_tokens": 400000,
+      "max_output_tokens": 128000,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 0.2,
+      "output_price_per_million_usd": 1.25,
+      "cache_input_price_per_million_usd": 0.02,
+      "capabilities": [
+        "tools",
+        "streaming",
+        "json_mode"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-openai-gpt-5-4-nano-2026-03-17",
+      "provider": "openai",
+      "vendor_model_id": "gpt-5.4-nano-2026-03-17",
+      "deprecated": false,
+      "max_input_tokens": 400000,
+      "max_output_tokens": 128000,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 0.2,
+      "output_price_per_million_usd": 1.25,
+      "cache_input_price_per_million_usd": 0.02,
+      "capabilities": [
+        "tools",
+        "streaming",
+        "json_mode"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-openai-gpt-5-4-pro",
+      "provider": "openai",
+      "vendor_model_id": "gpt-5.4-pro",
+      "deprecated": false,
+      "max_input_tokens": 1050000,
+      "max_output_tokens": 128000,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 30.0,
+      "output_price_per_million_usd": 180.0,
+      "cache_input_price_per_million_usd": null,
+      "capabilities": [
+        "tools",
+        "streaming",
+        "json_mode"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-openai-gpt-5-4-pro-2026-03-05",
+      "provider": "openai",
+      "vendor_model_id": "gpt-5.4-pro-2026-03-05",
+      "deprecated": false,
+      "max_input_tokens": 1050000,
+      "max_output_tokens": 128000,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 30.0,
+      "output_price_per_million_usd": 180.0,
+      "cache_input_price_per_million_usd": null,
+      "capabilities": [
+        "tools",
+        "streaming",
+        "json_mode"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-openai-gpt-5-mini",
+      "provider": "openai",
+      "vendor_model_id": "gpt-5-mini",
+      "deprecated": false,
+      "max_input_tokens": 400000,
+      "max_output_tokens": 128000,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 0.25,
+      "output_price_per_million_usd": 2.0,
+      "cache_input_price_per_million_usd": 0.025,
+      "capabilities": [
+        "tools",
+        "streaming",
+        "json_mode"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-openai-gpt-5-mini-2025-08-07",
+      "provider": "openai",
+      "vendor_model_id": "gpt-5-mini-2025-08-07",
+      "deprecated": false,
+      "max_input_tokens": 400000,
+      "max_output_tokens": 128000,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 0.25,
+      "output_price_per_million_usd": 2.0,
+      "cache_input_price_per_million_usd": 0.025,
+      "capabilities": [
+        "tools",
+        "streaming",
+        "json_mode"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-openai-gpt-5-nano",
+      "provider": "openai",
+      "vendor_model_id": "gpt-5-nano",
+      "deprecated": false,
+      "max_input_tokens": 400000,
+      "max_output_tokens": 128000,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 0.05,
+      "output_price_per_million_usd": 0.4,
+      "cache_input_price_per_million_usd": 0.005,
+      "capabilities": [
+        "tools",
+        "streaming",
+        "json_mode"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-openai-gpt-5-nano-2025-08-07",
+      "provider": "openai",
+      "vendor_model_id": "gpt-5-nano-2025-08-07",
+      "deprecated": false,
+      "max_input_tokens": 400000,
+      "max_output_tokens": 128000,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 0.05,
+      "output_price_per_million_usd": 0.4,
+      "cache_input_price_per_million_usd": 0.005,
+      "capabilities": [
+        "tools",
+        "streaming",
+        "json_mode"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-openai-gpt-5-pro",
+      "provider": "openai",
+      "vendor_model_id": "gpt-5-pro",
+      "deprecated": false,
+      "max_input_tokens": 400000,
+      "max_output_tokens": 272000,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 15.0,
+      "output_price_per_million_usd": 120.0,
+      "cache_input_price_per_million_usd": null,
+      "capabilities": [
+        "tools",
+        "streaming",
+        "json_mode"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-openai-gpt-5-pro-2025-10-06",
+      "provider": "openai",
+      "vendor_model_id": "gpt-5-pro-2025-10-06",
+      "deprecated": false,
+      "max_input_tokens": 400000,
+      "max_output_tokens": 272000,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 15.0,
+      "output_price_per_million_usd": 120.0,
+      "cache_input_price_per_million_usd": null,
+      "capabilities": [
+        "tools",
+        "streaming",
+        "json_mode"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-openai-gpt-5-search-api",
+      "provider": "openai",
+      "vendor_model_id": "gpt-5-search-api",
+      "deprecated": false,
+      "max_input_tokens": 128000,
+      "max_output_tokens": 16384,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 0.0,
+      "output_price_per_million_usd": 0.0,
+      "cache_input_price_per_million_usd": null,
+      "capabilities": [
+        "tools",
+        "streaming",
+        "json_mode"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-openai-gpt-5-search-api-2025-10-14",
+      "provider": "openai",
+      "vendor_model_id": "gpt-5-search-api-2025-10-14",
+      "deprecated": false,
+      "max_input_tokens": 128000,
+      "max_output_tokens": 16384,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 0.0,
+      "output_price_per_million_usd": 0.0,
+      "cache_input_price_per_million_usd": null,
+      "capabilities": [
+        "tools",
+        "streaming",
+        "json_mode"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-openai-gpt-image-1-5",
+      "provider": "openai",
+      "vendor_model_id": "gpt-image-1.5",
+      "deprecated": false,
+      "max_input_tokens": 128000,
+      "max_output_tokens": 16384,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 8.0,
+      "output_price_per_million_usd": 32.0,
+      "cache_input_price_per_million_usd": 2.0,
+      "capabilities": [
+        "tools",
+        "streaming"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-openai-gpt-image-1-mini",
+      "provider": "openai",
+      "vendor_model_id": "gpt-image-1-mini",
+      "deprecated": false,
+      "max_input_tokens": 128000,
+      "max_output_tokens": 16384,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 2.5,
+      "output_price_per_million_usd": 8.0,
+      "cache_input_price_per_million_usd": 0.25,
+      "capabilities": [
+        "tools",
+        "streaming"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-openai-gpt-image-2",
+      "provider": "openai",
+      "vendor_model_id": "gpt-image-2",
+      "deprecated": false,
+      "max_input_tokens": 128000,
+      "max_output_tokens": 16384,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 5.0,
+      "output_price_per_million_usd": 0.0,
+      "cache_input_price_per_million_usd": 1.25,
+      "capabilities": [
+        "tools",
+        "streaming"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-openai-gpt-image-2-2026-04-21",
+      "provider": "openai",
+      "vendor_model_id": "gpt-image-2-2026-04-21",
+      "deprecated": false,
+      "max_input_tokens": 128000,
+      "max_output_tokens": 16384,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 5.0,
+      "output_price_per_million_usd": 0.0,
+      "cache_input_price_per_million_usd": 1.25,
+      "capabilities": [
+        "tools",
+        "streaming"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-openai-o1",
+      "provider": "openai",
+      "vendor_model_id": "o1",
+      "deprecated": false,
+      "max_input_tokens": 200000,
+      "max_output_tokens": 100000,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 15.0,
+      "output_price_per_million_usd": 60.0,
+      "cache_input_price_per_million_usd": 7.5,
+      "capabilities": [
+        "tools",
+        "streaming"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-openai-o1-pro",
+      "provider": "openai",
+      "vendor_model_id": "o1-pro",
+      "deprecated": false,
+      "max_input_tokens": 200000,
+      "max_output_tokens": 100000,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 150.0,
+      "output_price_per_million_usd": 600.0,
+      "cache_input_price_per_million_usd": null,
+      "capabilities": [
+        "tools",
+        "streaming"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-openai-o3",
+      "provider": "openai",
+      "vendor_model_id": "o3",
+      "deprecated": false,
+      "max_input_tokens": 200000,
+      "max_output_tokens": 100000,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 2.0,
+      "output_price_per_million_usd": 8.0,
+      "cache_input_price_per_million_usd": 0.5,
+      "capabilities": [
+        "tools",
+        "streaming"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-openai-o3-2025-04-16",
+      "provider": "openai",
+      "vendor_model_id": "o3-2025-04-16",
+      "deprecated": false,
+      "max_input_tokens": 200000,
+      "max_output_tokens": 100000,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 2.0,
+      "output_price_per_million_usd": 8.0,
+      "cache_input_price_per_million_usd": 0.5,
+      "capabilities": [
+        "tools",
+        "streaming"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-openai-o3-mini",
+      "provider": "openai",
+      "vendor_model_id": "o3-mini",
+      "deprecated": false,
+      "max_input_tokens": 200000,
+      "max_output_tokens": 100000,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 1.1,
+      "output_price_per_million_usd": 4.4,
+      "cache_input_price_per_million_usd": 0.55,
+      "capabilities": [
+        "tools",
+        "streaming"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-openai-o4-mini",
+      "provider": "openai",
+      "vendor_model_id": "o4-mini",
+      "deprecated": false,
+      "max_input_tokens": 200000,
+      "max_output_tokens": 100000,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 1.1,
+      "output_price_per_million_usd": 4.4,
+      "cache_input_price_per_million_usd": 0.275,
+      "capabilities": [
+        "tools",
+        "streaming"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    },
+    {
+      "dgraph_model_id": "dgraph-openai-o4-mini-deep-research",
+      "provider": "openai",
+      "vendor_model_id": "o4-mini-deep-research",
+      "deprecated": false,
+      "max_input_tokens": 200000,
+      "max_output_tokens": 100000,
+      "reasoning_effort": null,
+      "input_price_per_million_usd": 2.0,
+      "output_price_per_million_usd": 8.0,
+      "cache_input_price_per_million_usd": 0.5,
+      "capabilities": [
+        "tools",
+        "streaming"
+      ],
+      "rate_limits": {
+        "rpm": null,
+        "tpm": null
+      }
+    }
+  ]
 }

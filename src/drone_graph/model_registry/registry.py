@@ -52,7 +52,7 @@ class ModelRegistry:
     def resolve_for_tier(self, tier: ModelTier) -> ModelRegistryEntry:
         if not self._data.models:
             msg = (
-                "Model registry is empty. Run `drone-graph generate-model-registry` "
+                "Model registry is empty. Run `drone-graph model-registry fresh` "
                 "(with OPENAI_API_KEY / ANTHROPIC_API_KEY in the environment), then set "
                 "`DRONE_GRAPH_MODEL_REGISTRY_PATH` to the generated JSON, or merge "
                 "models into your registry file."
@@ -75,14 +75,12 @@ class ModelRegistry:
         input_tokens: int,
         output_tokens: int,
         cache_read_tokens: int = 0,
-        cache_write_tokens: int = 0,
     ) -> float:
+        """Rough USD cost from token counts (incl. cached-input at cache_input price)."""
         scale = 1_000_000.0
         cost = (input_tokens / scale) * entry.input_price_per_million_usd + (
             output_tokens / scale
         ) * entry.output_price_per_million_usd
-        if entry.cache_read_price_per_million_usd is not None:
-            cost += (cache_read_tokens / scale) * entry.cache_read_price_per_million_usd
-        if entry.cache_write_price_per_million_usd is not None:
-            cost += (cache_write_tokens / scale) * entry.cache_write_price_per_million_usd
+        if entry.cache_input_price_per_million_usd is not None:
+            cost += (cache_read_tokens / scale) * entry.cache_input_price_per_million_usd
         return cost

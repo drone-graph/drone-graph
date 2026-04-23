@@ -7,10 +7,13 @@ from drone_graph.gaps.records import ModelTier
 from drone_graph.model_registry.doc_enrich import (
     DocOverlay,
     _anthropic_message_text,
+    _openai_api_model_card_url,
+    _openai_model_card_doc_id,
     apply_doc_overlays,
     extract_first_json_array,
 )
 from drone_graph.model_registry.generate import (
+    _entry_for_anthropic,
     build_registry_file,
     dgraph_model_id,
     finalize_registry,
@@ -129,6 +132,30 @@ def test_build_registry_file_anthropic_only() -> None:
     ModelRegistryFile.model_validate_json(data.model_dump_json())
 
 
+def test_entry_for_anthropic_extracts_effort_levels_from_capabilities() -> None:
+    class _Caps:
+        def __init__(self) -> None:
+            self.effort = {
+                "supported": True,
+                "low": {"supported": True},
+                "medium": {"supported": False},
+                "high": {"supported": True},
+                "max": {"supported": True},
+            }
+
+    info = ModelInfo.model_construct(
+        id="claude-opus-4-6",
+        created_at="2020-01-01T00:00:00Z",
+        display_name="Claude Opus 4.6",
+        type="model",
+        capabilities=_Caps(),
+        max_input_tokens=200_000,
+        max_tokens=8192,
+    )
+    entry = _entry_for_anthropic(info)
+    assert entry.reasoning_effort == ["low", "high", "max"]
+
+
 def test_anthropic_message_text_joins_text_blocks() -> None:
     msg = Message.model_construct(
         id="msg_1",
@@ -193,3 +220,15 @@ def test_finalize_registry_sorts_by_dgraph_id() -> None:
     out = finalize_registry(shuffled)
     ids = [m.dgraph_model_id for m in out.models]
     assert ids == sorted(ids)
+
+
+def test_openai_model_card_doc_id_strips_trailing_iso_date() -> None:
+    assert _openai_model_card_doc_id("gpt-4.1-mini-2025-04-14") == "gpt-4.1-mini"
+    assert _openai_model_card_doc_id("gpt-4-turbo-2024-04-09") == "gpt-4-turbo"
+    assert _openai_model_card_doc_id("gpt-4o") == "gpt-4o"
+
+
+def test_openai_api_model_card_url_uses_doc_id_without_date_suffix() -> None:
+    url = _openai_api_model_card_url("gpt-4.1-mini-2025-04-14")
+    assert "gpt-4.1-mini" in url
+    assert "2025-04-14" not in url

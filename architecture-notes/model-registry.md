@@ -8,43 +8,68 @@ Orchestration resolves **`Gap.model_tier`** → a registry row → **`provider`*
 
 A **preset or worker drone** may later search vendor docs / APIs for new models and **propose** registry updates (new rows, `deprecated: true`, price changes). That path should produce **reviewable artifacts** (findings or PRs) before the canonical registry file or graph is updated—same trust class as downloading skills from the internet (see `ROADMAP.md` Phase 4 / Phase 6).
 
-### Current vs future: who runs the LLM and web search?
+### Current vs future: who runs the LLM and where docs come from?
 
-**Today (bootstrap CLI):** `generate-model-registry` calls **vendor LLM APIs directly** from this repo (`doc_enrich.py`): OpenAI **Responses** with the built-in **`web_search`** tool, or Anthropic **Messages** with the **`web_search_20250305`** server tool. There is **no Drone** and **no skills marketplace** on this path yet—it is a developer convenience to produce JSON.
+**Today (bootstrap CLI):** `drone-graph model-registry …` calls **vendor APIs** and **doc enrichment** from this repo (`generate.py`, `doc_enrich.py`). There is **no Drone** on this path yet—it is a developer convenience to produce JSON.
 
-**Future:** The same job is intended to run as a **Drone** (or worker) on the hivemind substrate: the **AI that reasons about docs and registry rows *is* the drone** (invoked through orchestration), and **web search is not baked into `doc_enrich` forever**—it becomes a **Skill** loaded from a **skills marketplace** (an installable capability the drone can call), alongside other tools. This module’s direct API + web-search code is a **temporary stand-in** until that runtime exists.
+**OpenAI rows (doc enrichment):**
+
+- **Crawl4AI** via `drone_graph.skills_marketplace.tool.openai_docs_crawl` (Phase‑1 “marketplace” tooling): `get_model_card`, `get_pricing_page`, `get_deprecations_page` on `developers.openai.com` (allowlisted URLs; no arbitrary SSRF).
+- One **OpenAI Responses** call per model (**no** hosted `web_search` tool on this path) consumes the crawled markdown blocks; the model emits a small JSON **overlay** (pricing, deprecation, limits) merged into the row.
+
+**Anthropic rows (doc enrichment):**
+
+- One live **`Anthropic().models.list()`** JSON dump per batch (`anthropic_models_list_dump.py`).
+- **Cached** `platform.claude.com` plaintext from disk (`vendor_doc_cache.py`) plus that JSON in the merge prompt.
+- **Doc LLM backend** depends on which API keys are set (see table below). Anthropic merge uses **OpenAI Responses** when an OpenAI key is available (preferred when both keys exist); otherwise **Anthropic Messages** without hosted web search on the **cached** path used by the main enrichment loop.
+
+**Future:** The same job is intended to run as a **Drone** on the hivemind substrate, with doc fetch + reasoning split across **Skills** from a real **skills marketplace** instead of hard-coded `doc_enrich` + `skills_marketplace.tool` imports.
 
 ## Registry file shape
 
-The packaged bootstrap file is `src/drone_graph/model_registry/model_registry.json`: **`models` is `[]`** and **`tier_defaults` is `{}`** until you run **`drone-graph generate-model-registry`** and point **`DRONE_GRAPH_MODEL_REGISTRY_PATH`** at the generated JSON (or merge generated rows into your own file). `ModelRegistry.load_auto()` uses that empty default when the env var is unset.
+The packaged bootstrap file is `src/drone_graph/model_registry/model_registry.json`: **`models` is `[]`** and **`tier_defaults` is `{}`** until you populate it.
 
-## Generating the registry (`generate-model-registry`)
+- **`ModelRegistry.load_default()`** reads the packaged file.
+- **`ModelRegistry.load_auto()`** uses **`DRONE_GRAPH_MODEL_REGISTRY_PATH`** when set; otherwise the packaged default.
 
-There is **one** supported flow: **`drone-graph generate-model-registry`** lists models from vendor APIs (broad filters), then **always** runs a **web search–backed** pass against official docs for pricing, limits, and deprecation, merges results, and drops rows marked deprecated. (See **Current vs future** above: today this is direct vendor API + web search; later a **drone** + **marketplace web-search skill**.)
+## CLI: generating and refreshing the registry
 
-Set API keys in the **process environment** (e.g. `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`). **At least one** key must be set so listing returns at least one model.
+Primary commands (Typer): **`drone-graph model-registry`** with subcommands:
+
+| Command | Behavior |
+|---------|----------|
+| **`fresh`** | List models from vendor APIs (per `generate.py` filters), run doc enrichment, **overwrite** the registry JSON (clean build). Default output: packaged `model_registry.json` next to `generate.py`. |
+| **`update`** | Re-run **doc enrichment only** on an **existing** JSON file (no vendor list refetch). Fails if the file is missing. |
+| **`sync`** | Merge **newly discovered** vendor model ids into the current file, then enrich the full list. |
+
+Options: **`-o` / `--output`** (path), **`-v` / `--verbose`**, or env **`DRONE_GRAPH_REGISTRY_VERBOSE=1`** for noisy enrichment logs.
+
+```bash
+export OPENAI_API_KEY=...
+export ANTHROPIC_API_KEY=...   # optional but needed for Anthropic listing + Anthropic-only doc path
+
+uv run drone-graph model-registry fresh
+uv run drone-graph model-registry fresh -o out.json -v
+uv run drone-graph model-registry update
+uv run drone-graph model-registry sync
+```
+
+**Keys:**
+
+- **At least one** of `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` is required to **list** models when building from APIs.
+- **Doc enrichment** requires at least one key; if **both** are set, the doc-LLM **backend** for the enrich loop is **`openai`** (default model **`gpt-5-mini`** per `doc_enrich.py`), with the OpenAI key used for Responses and the Anthropic key still used for `models.list()` and Anthropic row inputs.
 
 | Variable | Purpose |
 |----------|---------|
-| **`OPENAI_API_KEY`** | When set, lists OpenAI chat-capable model ids (broad `gpt-*` / `o*` / `chatgpt-*` filter in `generate.py`; still skips embeddings, audio, etc.). |
-| **`ANTHROPIC_API_KEY`** | When set, lists Anthropic `type == "model"` rows (broad: no extra legacy substring filter on the list step). |
+| **`OPENAI_API_KEY`** | OpenAI model listing; OpenAI row crawl + Responses; Anthropic row merge via Responses when both keys set. |
+| **`ANTHROPIC_API_KEY`** | Anthropic model listing + `models.list()` JSON; Anthropic Messages when OpenAI key absent. |
+| **`DRONE_GRAPH_MODEL_REGISTRY_PATH`** | Optional path to registry JSON for `ModelRegistry.load_auto()`. |
+| **`DRONE_GRAPH_VENDOR_DOC_CACHE`** | Optional root dir for cached vendor doc plaintext (see `vendor_doc_cache.py`). |
+| **`DRONE_GRAPH_VENDOR_DOC_CACHE_MAX_AGE_HOURS`** | Optional cache TTL for HTTP refetch of cached docs. |
 
-**Doc enrichment (always on):** Each registry row is enriched in a **separate** API call with **at most one web search** per model (deprecation checked first from that search; pricing filled only when the same results support it). Progress logs print the **intended search focus** string for each model.
+**Caveats:** Enrichment is **non-deterministic**; review pricing and `tier_defaults` before production. OpenAI **`capabilities`** heuristics in `generate.py` are approximate; Anthropic rows derive tags from the SDK capability object when present. **`tier_defaults`** remain heuristic picks after filtering.
 
-- If **`ANTHROPIC_API_KEY`** is set, enrichment uses **Anthropic Messages** + **`web_search_20250305`**, default model **`claude-haiku-4-5`**. **Web search** must be enabled for your org in the Claude Console.
-- If only **`OPENAI_API_KEY`** is set, enrichment uses **OpenAI Responses** + **`web_search`**, default **`gpt-5-mini`**.
-- When **both** keys are set, **Anthropic** is used for enrichment.
-
-**Caveats:** Output is **non-deterministic**; some fields may stay at list defaults if the model omits them—**review** before production. **`tier_defaults`** are still heuristic name picks after filtering. **`capabilities`** for OpenAI remain heuristic; Anthropic rows use the SDK capability object when present.
-
-```bash
-export ANTHROPIC_API_KEY=...   # preferred when you have it (Haiku 4.5 default for enrichment)
-export OPENAI_API_KEY=...      # optional: OpenAI listing; required for enrichment if no Anthropic key
-uv run drone-graph generate-model-registry              # writes model_registry.json in cwd
-uv run drone-graph generate-model-registry -o out.json  # custom path
-```
-
-Top level:
+## Top-level JSON shape
 
 | Field | Type | Description |
 |--------|------|-------------|
@@ -57,32 +82,31 @@ All **prices are USD per 1 million tokens** unless noted.
 
 | Field | Type | Required | Description |
 |--------|------|----------|-------------|
-| **`dgraph_model_id`** | string | yes | Stable internal id (prefix / naming convention up to the team; must be unique across `models`). |
+| **`dgraph_model_id`** | string | yes | Stable internal id (must be unique across `models`). |
 | **`provider`** | string | yes | `anthropic` or `openai` (matches `Provider` in code). |
 | **`vendor_model_id`** | string | yes | Exact API model id passed to the SDK. |
-| **`deprecated`** | boolean | yes | `false` = eligible for routing; `true` = kept for history / analytics but must not appear in `tier_defaults` and must not be chosen for new runs. |
-| **`max_input_tokens`** | integer | yes | Policy ceiling for input context (aligned with product limits, not necessarily the vendor’s raw maximum). |
+| **`deprecated`** | boolean | yes | `false` = eligible for routing; `true` = kept for history but must not appear in `tier_defaults` or new runs; enrichment may **drop** the row when the doc overlay marks deprecated. |
+| **`max_input_tokens`** | integer | yes | Policy ceiling for input context. |
 | **`max_output_tokens`** | integer | yes | Policy ceiling for completion tokens. |
-| **`reasoning_effort`** | string or null | yes | Nullable. Meaning is model-specific (e.g. low / medium / high, or vendor-specific tokens). Use `null` when N/A. |
+| **`reasoning_effort`** | array of strings or null | yes | Nullable list (e.g. OpenAI API reasoning levels; Anthropic effort levels from API/docs). |
 | **`input_price_per_million_usd`** | number | yes | Input token price, **USD per 1M tokens**. |
 | **`output_price_per_million_usd`** | number | yes | Output token price, **USD per 1M tokens**. |
-| **`cache_read_price_per_million_usd`** | number or null | yes | Optional. Cache read pricing where the vendor exposes it; same **per 1M** unit. `null` if unused. |
-| **`cache_write_price_per_million_usd`** | number or null | yes | Optional. Cache write pricing; **per 1M**. `null` if unused. |
-| **`capabilities`** | array of strings | yes | Multi-valued capability flags (e.g. `tools`, `vision`, `streaming`, `json_mode`). Unknown strings are allowed for forward compatibility; document conventions here as you adopt them. |
-| **`rate_limits`** | object | yes | Soft hints for orchestration / backoff. See below. |
+| **`cache_input_price_per_million_usd`** | number or null | yes | Cached input / prompt-cache hit pricing **per 1M**; `null` if unused. |
+| **`capabilities`** | array of strings | yes | **Single flat list** of tags (e.g. `tools`, `streaming`, `vision`, `json_mode`, Anthropic flags). Legacy JSON shape `{"tools":[…],"features":[…]}` is still **accepted on load** and normalized to one list (`records.normalize_capabilities_value`). |
+| **`rate_limits`** | object | yes | Soft hints (`rpm`, `tpm`). |
 
 ### `rate_limits` object
 
 | Field | Type | Description |
 |--------|------|-------------|
-| **`rpm`** | integer or null | Requests per minute (vendor or your own quota). |
-| **`tpm`** | integer or null | Tokens per minute (vendor or your own quota). |
+| **`rpm`** | integer or null | Requests per minute. |
+| **`tpm`** | integer or null | Tokens per minute. |
 
 Both may be `null` if unknown.
 
 ## Resolution rules (v1)
 
-1. If **`models`** is empty, resolution fails with a clear error until a populated registry is configured (generate + **`DRONE_GRAPH_MODEL_REGISTRY_PATH`**, or replace the packaged file after merge).
+1. If **`models`** is empty, resolution fails with a clear error until a populated registry is configured (`model-registry fresh`, **`DRONE_GRAPH_MODEL_REGISTRY_PATH`**, or replace the packaged file after merge).
 2. Read **`gap.model_tier`**.
 3. Look up **`tier_defaults[tier]`** → **`dgraph_model_id`**.
 4. Load that entry from **`models`**; reject if missing.
@@ -91,7 +115,11 @@ Both may be `null` if unknown.
 
 Optional later: **`dgraph_model_id` override on `Gap`**, multi-model routing, or A/B by tier.
 
-## Related types
+## Related types and modules
 
 - **`ModelTier`** — `gaps/records.py` (`cheap`, `standard`, `frontier`).
 - **`Provider`** — `drones/providers.py` (`anthropic`, `openai`).
+- **Implementation** — `src/drone_graph/model_registry/` (`records.py`, `registry.py`, `generate.py`, `doc_enrich.py`, `vendor_doc_cache.py`, `anthropic_models_list_dump.py`).
+- **Phase‑1 doc tools** — `src/drone_graph/skills_marketplace/tool/` (`openai_docs_crawl.py`, `crawl4ai_page_tool.py`); imported by `doc_enrich` for OpenAI developer docs crawls.
+
+**Layering note:** `architecture-notes/modules.md` may still say `model_registry` only imports `gaps` and `drones`; in practice **`doc_enrich.py` also imports `skills_marketplace`** for Crawl4AI—update `modules.md` when you next edit dependency rules.

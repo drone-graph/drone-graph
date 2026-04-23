@@ -5,7 +5,51 @@ import json
 import pytest
 
 from drone_graph.gaps import Gap, ModelTier
-from drone_graph.model_registry import ModelRegistry, ModelRegistryFile
+from drone_graph.model_registry import ModelRegistry, ModelRegistryEntry, ModelRegistryFile
+
+
+def test_capabilities_coerce_legacy_flat_list() -> None:
+    e = ModelRegistryEntry.model_validate(
+        {
+            "dgraph_model_id": "x",
+            "provider": "openai",
+            "vendor_model_id": "gpt-4o",
+            "deprecated": False,
+            "max_input_tokens": 1,
+            "max_output_tokens": 1,
+            "reasoning_effort": None,
+            "input_price_per_million_usd": 0.0,
+            "output_price_per_million_usd": 0.0,
+            "cache_input_price_per_million_usd": None,
+            "capabilities": ["tools", "streaming", "vision"],
+            "rate_limits": {},
+        }
+    )
+    assert e.capabilities == ["tools", "streaming", "vision"]
+
+
+def test_capabilities_coerce_legacy_tools_features_dict() -> None:
+    e = ModelRegistryEntry.model_validate(
+        {
+            "dgraph_model_id": "x",
+            "provider": "anthropic",
+            "vendor_model_id": "claude-x",
+            "deprecated": False,
+            "max_input_tokens": 1,
+            "max_output_tokens": 1,
+            "reasoning_effort": None,
+            "input_price_per_million_usd": 0.0,
+            "output_price_per_million_usd": 0.0,
+            "cache_input_price_per_million_usd": None,
+            "capabilities": {
+                "tools": ["tools"],
+                "features": ["streaming", "vision", "pdf_input"],
+            },
+            "rate_limits": {},
+        }
+    )
+    assert e.capabilities == ["tools", "streaming", "vision", "pdf_input"]
+
 
 _POPULATED = {
     "tier_defaults": {"cheap": "a", "standard": "b", "frontier": "c"},
@@ -20,9 +64,8 @@ _POPULATED = {
             "reasoning_effort": None,
             "input_price_per_million_usd": 0.15,
             "output_price_per_million_usd": 0.6,
-            "cache_read_price_per_million_usd": None,
-            "cache_write_price_per_million_usd": None,
-            "capabilities": ["tools"],
+            "cache_input_price_per_million_usd": None,
+            "capabilities": {"tools": ["tools"], "features": []},
             "rate_limits": {},
         },
         {
@@ -35,9 +78,8 @@ _POPULATED = {
             "reasoning_effort": None,
             "input_price_per_million_usd": 0,
             "output_price_per_million_usd": 0,
-            "cache_read_price_per_million_usd": None,
-            "cache_write_price_per_million_usd": None,
-            "capabilities": ["streaming"],
+            "cache_input_price_per_million_usd": None,
+            "capabilities": {"tools": [], "features": ["streaming"]},
             "rate_limits": {},
         },
         {
@@ -50,9 +92,8 @@ _POPULATED = {
             "reasoning_effort": None,
             "input_price_per_million_usd": 0,
             "output_price_per_million_usd": 0,
-            "cache_read_price_per_million_usd": None,
-            "cache_write_price_per_million_usd": None,
-            "capabilities": ["vision"],
+            "cache_input_price_per_million_usd": None,
+            "capabilities": {"tools": [], "features": ["vision"]},
             "rate_limits": {},
         },
     ],
@@ -63,16 +104,17 @@ def _populated_registry() -> ModelRegistry:
     return ModelRegistry.from_json(json.dumps(_POPULATED))
 
 
-def test_load_default_registry_is_bootstrap() -> None:
-    reg = ModelRegistry.load_default()
+def test_empty_packaged_shape_rejects_resolve() -> None:
+    """Bootstrap JSON shape: no models → resolution fails (independent of packaged file)."""
+    reg = ModelRegistry.from_json(json.dumps({"tier_defaults": {}, "models": []}))
     assert reg.is_populated is False
-    assert reg.get("dgraph-openai-gpt-4o-mini") is None
-
-
-def test_resolve_for_tier_fails_on_bootstrap() -> None:
-    reg = ModelRegistry.load_default()
     with pytest.raises(ValueError, match="empty"):
         reg.resolve_for_tier(ModelTier.cheap)
+
+
+def test_load_default_registry_parses() -> None:
+    reg = ModelRegistry.load_default()
+    assert isinstance(reg, ModelRegistry)
 
 
 @pytest.mark.parametrize(
@@ -128,8 +170,7 @@ def test_rejects_duplicate_dgraph_model_id() -> None:
                 "reasoning_effort": None,
                 "input_price_per_million_usd": 0,
                 "output_price_per_million_usd": 0,
-                "cache_read_price_per_million_usd": None,
-                "cache_write_price_per_million_usd": None,
+                "cache_input_price_per_million_usd": None,
                 "capabilities": [],
                 "rate_limits": {},
             },
@@ -143,8 +184,7 @@ def test_rejects_duplicate_dgraph_model_id() -> None:
                 "reasoning_effort": None,
                 "input_price_per_million_usd": 0,
                 "output_price_per_million_usd": 0,
-                "cache_read_price_per_million_usd": None,
-                "cache_write_price_per_million_usd": None,
+                "cache_input_price_per_million_usd": None,
                 "capabilities": [],
                 "rate_limits": {},
             },
@@ -158,8 +198,7 @@ def test_rejects_duplicate_dgraph_model_id() -> None:
                 "reasoning_effort": None,
                 "input_price_per_million_usd": 0,
                 "output_price_per_million_usd": 0,
-                "cache_read_price_per_million_usd": None,
-                "cache_write_price_per_million_usd": None,
+                "cache_input_price_per_million_usd": None,
                 "capabilities": [],
                 "rate_limits": {},
             },
@@ -173,8 +212,7 @@ def test_rejects_duplicate_dgraph_model_id() -> None:
                 "reasoning_effort": None,
                 "input_price_per_million_usd": 0,
                 "output_price_per_million_usd": 0,
-                "cache_read_price_per_million_usd": None,
-                "cache_write_price_per_million_usd": None,
+                "cache_input_price_per_million_usd": None,
                 "capabilities": [],
                 "rate_limits": {},
             },
@@ -202,8 +240,7 @@ def test_rejects_deprecated_tier_default() -> None:
                 "reasoning_effort": None,
                 "input_price_per_million_usd": 0,
                 "output_price_per_million_usd": 0,
-                "cache_read_price_per_million_usd": None,
-                "cache_write_price_per_million_usd": None,
+                "cache_input_price_per_million_usd": None,
                 "capabilities": [],
                 "rate_limits": {},
             },
@@ -217,8 +254,7 @@ def test_rejects_deprecated_tier_default() -> None:
                 "reasoning_effort": None,
                 "input_price_per_million_usd": 0,
                 "output_price_per_million_usd": 0,
-                "cache_read_price_per_million_usd": None,
-                "cache_write_price_per_million_usd": None,
+                "cache_input_price_per_million_usd": None,
                 "capabilities": [],
                 "rate_limits": {},
             },
@@ -232,8 +268,7 @@ def test_rejects_deprecated_tier_default() -> None:
                 "reasoning_effort": None,
                 "input_price_per_million_usd": 0,
                 "output_price_per_million_usd": 0,
-                "cache_read_price_per_million_usd": None,
-                "cache_write_price_per_million_usd": None,
+                "cache_input_price_per_million_usd": None,
                 "capabilities": [],
                 "rate_limits": {},
             },
@@ -258,8 +293,7 @@ def test_json_roundtrip_tier_defaults_keys() -> None:
                     "reasoning_effort": None,
                     "input_price_per_million_usd": 0,
                     "output_price_per_million_usd": 0,
-                    "cache_read_price_per_million_usd": None,
-                    "cache_write_price_per_million_usd": None,
+                    "cache_input_price_per_million_usd": None,
                     "capabilities": ["tools"],
                     "rate_limits": {"rpm": 1, "tpm": None},
                 },
@@ -273,8 +307,7 @@ def test_json_roundtrip_tier_defaults_keys() -> None:
                     "reasoning_effort": None,
                     "input_price_per_million_usd": 0,
                     "output_price_per_million_usd": 0,
-                    "cache_read_price_per_million_usd": None,
-                    "cache_write_price_per_million_usd": None,
+                    "cache_input_price_per_million_usd": None,
                     "capabilities": [],
                     "rate_limits": {},
                 },
@@ -288,8 +321,7 @@ def test_json_roundtrip_tier_defaults_keys() -> None:
                     "reasoning_effort": None,
                     "input_price_per_million_usd": 0,
                     "output_price_per_million_usd": 0,
-                    "cache_read_price_per_million_usd": None,
-                    "cache_write_price_per_million_usd": None,
+                    "cache_input_price_per_million_usd": None,
                     "capabilities": [],
                     "rate_limits": {},
                 },

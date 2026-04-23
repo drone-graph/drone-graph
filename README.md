@@ -8,6 +8,7 @@ Read in order:
 2. [`architecture-notes/synthesis.md`](architecture-notes/synthesis.md) — architecture overview
 3. [`ROADMAP.md`](ROADMAP.md) — build plan
 4. [`architecture-notes/phase-0-and-1.md`](architecture-notes/phase-0-and-1.md) — what's built so far
+5. [`architecture-notes/model-registry.md`](architecture-notes/model-registry.md) — registry JSON, CLI, and enrichment (when you maintain or extend the catalog)
 
 ## Status
 
@@ -25,6 +26,12 @@ export ANTHROPIC_API_KEY=...
 ```
 
 Neo4j Browser: http://localhost:7474 (user `neo4j`, password `drone-graph-dev`).
+
+### Windows
+
+- Use **Docker Desktop** instead of Colima to run `docker compose up -d neo4j`.
+- **Bash is required** for the Phase 0/1 demos: each drone uses a persistent **Bash** session for `terminal_run` (not PowerShell or cmd). Install **[Git for Windows](https://git-scm.com/download/win)** so `bash.exe` exists; the project prefers Git’s Bash under `Program Files\Git\bin` when present.
+- After a successful run, paths like `/tmp/hello.txt` are interpreted by **that** Bash environment. Check them from Git Bash, or e.g. `bash -lc "cat /tmp/hello.txt"` — they are not the same as `%TEMP%` in Command Prompt.
 
 Reset state between demos:
 
@@ -84,6 +91,31 @@ MATCH (d:Drone) RETURN d.gap_id, d.spawned_at ORDER BY d.spawned_at
 ```
 
 Orchestrator tapes accumulate under `var/tapes/` as JSONL.
+
+## Model registry
+
+The **model registry** is the JSON source of truth for which models exist in the system, how they are priced, what they support, and how **`Gap.model_tier`** maps to a concrete **`provider`** + **`vendor_model_id`** for routing. The packaged file is [`src/drone_graph/model_registry/model_registry.json`](src/drone_graph/model_registry/model_registry.json). Deeper schema, resolution rules, and enrichment behavior live in [`architecture-notes/model-registry.md`](architecture-notes/model-registry.md).
+
+**Prerequisites:** set **`OPENAI_API_KEY`** and/or **`ANTHROPIC_API_KEY`** (at least one vendor key is required to list models from APIs; both keys unlock the richer doc-enrichment path in that note).
+
+```sh
+export OPENAI_API_KEY=...          # and/or ANTHROPIC_API_KEY=...
+
+# Clean build: list models from vendor APIs, run doc enrichment, overwrite the registry JSON
+# (default path: packaged model_registry.json).
+uv run drone-graph model-registry fresh
+
+# Same as fresh, but write elsewhere and print verbose enrichment logs (-v or DRONE_GRAPH_REGISTRY_VERBOSE=1).
+uv run drone-graph model-registry fresh -o ./my-registry.json -v
+
+# Doc enrichment only on the existing file — no vendor list refetch; fails if the file is missing.
+uv run drone-graph model-registry update
+
+# Merge newly discovered vendor model ids into the current file, then enrich the full set.
+uv run drone-graph model-registry sync
+```
+
+At runtime, **`ModelRegistry.load_auto()`** reads the packaged JSON unless **`DRONE_GRAPH_MODEL_REGISTRY_PATH`** points at another file (see the architecture note for other env vars such as vendor doc cache).
 
 ## Running tests
 
