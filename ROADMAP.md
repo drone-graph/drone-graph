@@ -80,9 +80,9 @@ This roadmap is living. As the architecture firms up under real runs, rewrite it
 
 ## Phase 5 — Remaining presets
 
-**Demo.** Memory management, full alignment, research, and testing all run as preset drones. Stale findings get summarized/pruned. Completed gaps get end-to-end alignment-checked.
+**Demo.** Memory management, full alignment, and testing all run as preset drones. Stale findings get summarized/pruned. Completed gaps get end-to-end alignment-checked.
 
-**Requires.** Memory pruning policy (decided in this phase, not before) · alignment integrated with gap finder (new gaps spawn when alignment fails) · research preset (web + internal graph search) · testing preset (runs structured checks on closed gaps) · entity resolution skill or preset (multiple drones will propose duplicate nodes in findings/ontology — canonicalize).
+**Requires.** Memory pruning policy (decided in this phase, not before) · alignment preset integrated with gap finder (Alignment writes findings; Gap Finding reads them and retires or reopens) · testing preset (runs structured checks on closed gaps) · entity resolution skill or preset (multiple drones will propose duplicate nodes in findings/ontology — canonicalize).
 
 **Out of scope.** Human interface beyond existing CLI.
 

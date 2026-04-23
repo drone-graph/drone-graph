@@ -53,7 +53,7 @@ conform to.
 - **Drone** — an ephemeral agent instance. Spawned for a gap, dissolves when done.
 - **Gap** — the atomic unit of work. Defined by absence, not assignment.
 - **Preset gap** — a persistent gap that is never closed, only continually
-  worked (gap finding, memory management, research, testing).
+  worked (gap finding, memory management, alignment, testing).
 - **Collective mind** — the shared persistent substrate (skills, tool registry,
   findings, user uploads, gaps).
 - **Signal protocol** — the mechanical coordination layer that keeps drones from

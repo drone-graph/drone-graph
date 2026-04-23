@@ -16,7 +16,7 @@ Gaps are the atomic unit of work — defined by absence, not assignment. Each ga
 - **Required capabilities** — tool use, context window size, cost ceiling, latency tolerance, reasoning depth, model tier
 - **Acceptance criteria** — how the hivemind knows the gap is closed
 
-There are two kinds of gaps. **Preset gaps** are persistent and always present — they are never filled, only continually acted on. These include gap finding, memory management, research, and testing. All other gaps emerge from the gap finding process and are filled by drones as normal.
+There are two kinds of gaps. **Preset gaps** are persistent and always present — they are never filled, only continually acted on. These include gap finding, memory management, alignment, and testing. All other gaps emerge from the gap finding process and are filled by drones as normal.
 
 ## Gap Finding
 

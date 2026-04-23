@@ -21,3 +21,5 @@ graphify-out/
 
 # Cursor — commit project rules/skills; ignore everything else under .cursor/
 .cursor/
+
+experiments/

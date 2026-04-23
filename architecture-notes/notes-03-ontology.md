@@ -25,5 +25,5 @@
 
 # Saved to Graph
 
-- Research
+- Alignment
 - Budget

@@ -26,7 +26,7 @@
 # Findings
 
 - venv state
-- Research
+- Alignment
 - Progress of business
 - History
 
