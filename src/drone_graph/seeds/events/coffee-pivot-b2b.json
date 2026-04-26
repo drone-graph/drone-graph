@@ -1,0 +1,15 @@
+{
+  "description": "Coffee storefront, mid-run pivot from DTC to B2B wholesale. Tests whether Gap Finding notices a user_input finding that invalidates a large portion of the DTC-oriented tree, and whether Alignment detects the drift when Gap Finding lags.",
+  "root": "01-coffee-storefront",
+  "alignment_every_n_gf": 3,
+  "max_gf_invocations": 15,
+  "events": [
+    {
+      "at_gf_tick": 5,
+      "author": "user",
+      "kind": "user_input",
+      "summary": "Founder decision as of today: pivot away from DTC. All new work should target B2B wholesale to independent cafés in our operating region. Existing DTC-specific setup (consumer-facing storefront, paid social acquisition, retail-style policy pages, consumer email lifecycle) should be paused and only revived if genuinely useful in a B2B context. New subtrees should cover B2B sales motion, wholesale pricing tiers, account-management workflow, and café outreach. The root criteria should now be interpreted as a thriving B2B wholesale operation, not a DTC storefront.",
+      "affected_gap_ids": []
+    }
+  ]
+}

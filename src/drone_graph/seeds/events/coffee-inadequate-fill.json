@@ -1,0 +1,16 @@
+{
+  "description": "Coffee storefront, mid-run worker fills a pricing-related leaf with an obviously placeholder/inadequate fill (self-declared partial coverage, no competitive analysis). Tests whether Alignment writes alignment_unmet_intent and whether Gap Finding reacts with reopen. Fill targets a live leaf by intent-substring match so the scenario is robust to dynamic gap IDs.",
+  "root": "01-coffee-storefront",
+  "alignment_every_n_gf": 3,
+  "max_gf_invocations": 15,
+  "events": [
+    {
+      "at_gf_tick": 5,
+      "author": "worker",
+      "kind": "fill",
+      "target_leaf_intent_match": "pric",
+      "summary": "Set prices for 3 SKUs (of a planned 12-SKU menu) at $18/bag flat across the board. Did not run any competitive survey, did not compute landed cost or margin floor, did not validate against the roaster-wholesale contract yet — these are placeholder values so we have *something* on the storefront; will revisit when pricing research lands. Flagging this as done for now because the storefront won't publish without price fields populated.",
+      "affected_gap_ids": []
+    }
+  ]
+}

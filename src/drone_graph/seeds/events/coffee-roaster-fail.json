@@ -1,0 +1,15 @@
+{
+  "description": "Coffee storefront, mid-run worker fail showing the roaster-partnership strategy is structurally unworkable under current constraints. Tests whether Alignment picks up the invalidated premise and whether Gap Finding retires or re-decomposes.",
+  "root": "01-coffee-storefront",
+  "alignment_every_n_gf": 3,
+  "max_gf_invocations": 15,
+  "events": [
+    {
+      "at_gf_tick": 5,
+      "author": "worker",
+      "kind": "fail",
+      "summary": "Research complete: after contacting 14 specialty roasters across the region, no wholesale partner is available at the current price ceiling of $9/lb for green-adjacent roasted single-origin supply. Market floor is $12/lb for comparable quality, with MOQs of 200+ lb per SKU per month — well above our working-capital runway. The existing roaster-wholesale plan is not viable without one of: raising the price ceiling (breaks the DTC margin model at current retail prices), raising working capital (not currently approved), or changing the product mix away from single-origin (changes the root thesis). Any subtree premised on a $9/lb single-origin wholesale relationship should be treated as blocked.",
+      "affected_gap_ids": []
+    }
+  ]
+}

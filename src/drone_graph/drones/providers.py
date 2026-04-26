@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import os
+import random
+import time
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Protocol, cast
@@ -44,6 +46,67 @@ class ChatClient(Protocol):
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]],
     ) -> ChatResponse: ...
+
+
+# Transient error classes that are worth retrying. Kept as a name list so we
+# don't hard-import provider SDKs at module load — some environments skip
+# installing openai/anthropic transitively.
+_TRANSIENT_ERROR_NAMES = frozenset(
+    {
+        "APIConnectionError",
+        "APITimeoutError",
+        "APIStatusError",  # covers transient 5xx under the SDK
+        "RateLimitError",
+        "InternalServerError",
+        "ServiceUnavailableError",
+        "ConnectError",
+        "ReadTimeout",
+        "ConnectTimeout",
+        "ConnectionError",
+    }
+)
+
+DEFAULT_MAX_RETRIES = 3
+DEFAULT_BACKOFF_BASE_S = 1.5  # 1.5, 3, 6 ... seconds
+DEFAULT_BACKOFF_CAP_S = 30.0
+
+
+def _is_transient(exc: BaseException) -> bool:
+    return type(exc).__name__ in _TRANSIENT_ERROR_NAMES
+
+
+def _retryable_chat(
+    fn: Any,
+    *,
+    max_retries: int = DEFAULT_MAX_RETRIES,
+    base_s: float = DEFAULT_BACKOFF_BASE_S,
+    cap_s: float = DEFAULT_BACKOFF_CAP_S,
+) -> Any:
+    """Wrap a ``chat(...)`` bound method with bounded exponential backoff.
+
+    Only transient network / rate-limit errors are retried. Every other
+    exception propagates unchanged so bugs aren't swallowed.
+    """
+
+    def _wrapped(
+        system: str,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+    ) -> ChatResponse:
+        attempt = 0
+        while True:
+            try:
+                return cast(ChatResponse, fn(system, messages, tools))
+            except Exception as e:  # noqa: BLE001 - filter by transient class below
+                if not _is_transient(e) or attempt >= max_retries:
+                    raise
+                # Exponential backoff with jitter.
+                delay = min(cap_s, base_s * (2**attempt))
+                delay *= 0.8 + 0.4 * random.random()
+                time.sleep(delay)
+                attempt += 1
+
+    return _wrapped
 
 
 # USD per 1M tokens (input, output). Update as pricing changes.
@@ -318,8 +381,14 @@ def resolve_orchestrator_provider_model(
 
 
 def make_client(provider: Provider, model: str) -> ChatClient:
+    client: ChatClient
     if provider is Provider.anthropic:
-        return AnthropicClient(model)
-    if provider is Provider.openai:
-        return OpenAIClient(model)
-    raise NotImplementedError(f"provider {provider} not wired yet")
+        client = AnthropicClient(model)
+    elif provider is Provider.openai:
+        client = OpenAIClient(model)
+    else:
+        raise NotImplementedError(f"provider {provider} not wired yet")
+    # Wrap the raw chat() method in bounded exponential backoff for transient
+    # network / rate-limit errors. Non-transient exceptions still propagate.
+    client.chat = _retryable_chat(client.chat)  # type: ignore[method-assign]
+    return client
