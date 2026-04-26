@@ -4,53 +4,58 @@ Each phase produces a demoable artifact that stands on its own. Build order is b
 
 This roadmap is living. As the architecture firms up under real runs, rewrite it. Absolute dates only — no "next week."
 
+> **Status (2026-04):** Phases 0–2 effectively land in the unified runtime —
+> one drone class, gaps as work units, a graph-backed `:Tool` registry, preset
+> gaps for Gap Finding and Alignment, batched structural edits, deterministic
+> auto-rollup, and `rewrite_intent`. Real worker drones close emergent leaves
+> against scenarios like `coffee-pivot-b2b` end to end. Phase 4 has its
+> *substrate* (Tool nodes + `cm_register_tool` + `cm_request_tool` + drone-
+> installed tool nodes) but no skills marketplace yet. Phase 3 (concurrency
+> + signal protocol) is unstarted: the loop is still single-threaded.
+
 ---
 
 ## Phase 0 — First drone, first gap
 
-**Demo.** Hand-write a gap into Neo4j. One drone spawns, uses its terminal, writes a finding, dies. Verify in Neo4j Browser.
+**Status.** Done. The unified `run_drone(gap)` runtime can be exercised on a
+single hand-written gap via `drone-graph gap create` + `drone-graph drone run`.
+Drone, Gap, Finding nodes all show up in Neo4j Browser as designed.
 
-**Requires.** Python toolchain · Neo4j via docker-compose · minimal graph schema (Gap / Finding / Drone) · drone runtime (no skills) · per-drone terminal wrapper · hivemind system prompt v0 · orchestrator stub (single drone, sequential, FIFO) · CLI for gap insertion and orchestrator run.
-
-**Out of scope.** Gap finder · concurrency · claim-and-lease · signal protocol · skills · tool registry · alignment · memory management · vector search · Secret Store · ontology bootstrap · budget enforcement.
-
-**Acceptance.** `drone-graph submit-gap "Create /tmp/hello.txt containing 'hi'"` followed by `drone-graph run-orchestrator` results in: the file exists, Neo4j contains `(:Gap)-[:CLOSED_WITH]->(:Finding)-[:PRODUCED_BY]->(:Drone)`, gap status is `closed`.
-
-**Blocks.** Everything.
-
-**Detailed spec.** [`architecture/phase-0.md`](architecture/phase-0.md).
+**Detailed spec.** [`architecture-notes/phase-0.md`](architecture-notes/phase-0.md).
 
 ---
 
-## Phase 1 — Orchestrator & multi-gap
+## Phase 1 — Multi-gap orchestrator
 
-**Demo.** Submit several gaps; orchestrator processes them sequentially, honoring `BLOCKED_BY` dependencies.
-
-**Requires.** Gap store query API · status transitions (`open → in_progress → closed | failed`) · topological ordering of the gap DAG · typed gap queries (by status, by tier, by age).
-
-**Out of scope.** Concurrency · signal protocol.
-
-**Acceptance.** Submit three gaps where B depends on A and C depends on B; they execute A → B → C regardless of insertion order.
-
-**Blocks.** Phase 2.
+**Status.** Subsumed by Phase 2. The original `BLOCKED_BY` DAG model was
+replaced by gap **decomposition** (Gap Finding mints children when a gap is
+too broad for one pass) plus auto-rollup (parent fills when all non-retired
+children fill). Sequencing is now driven by the tree shape and worker
+attempt order, not an explicit DAG.
 
 ---
 
 ## Phase 2 — Gap finder preset (the real thesis demo)
 
-**Demo.** User submits a goal. Gap finder decomposes into a tree. Worker drones pick off leaves. Results roll back up. First run that demonstrates the thesis end to end.
+**Status.** Done. The Gap Finding preset gap is minted at substrate init with
+a fixed `tool_loadout` (`decompose / create / retire / reopen / rewrite_intent
+/ noop`) and a `context_preload` that pre-renders recent findings + leaves +
+tree shape into the drone's initial message. Alignment is a peer preset
+(`tool_loadout = [write_alignment_finding]`). Both preset drones can batch
+up to 5 edits/findings per invocation. Real workers fill emergent leaves and
+the substrate auto-rolls up filled subtrees.
 
-**Requires.** Gap finder preset drone · decomposition that respects the ~5-layer depth rule (leaves become workable) · alignment preset (even primitive — "does the output satisfy the goal text") · trigger logic: gap finder runs on schedule + when open gap count is low + on user input.
-
-**Out of scope.** Concurrency beyond naive sequential · autonomous skill authoring · Secret Store.
-
-**Acceptance.** Submit "write a short story about a lighthouse." Gap finder decomposes into ~3–10 gaps (outline, character, scenes, polish). Worker drones close leaves. Final story exists as a finding referenced by the root gap.
-
-**Blocks.** Phase 3+.
+**Demo.** Run `python -m drone_graph.orchestrator.loop --scenario
+coffee-pivot-b2b --model claude-haiku-4-5-20251001 --worker-every 2 --out
+var/runs/<dir>`. Gap Finding decomposes the root, alignment surfaces drift,
+workers fill leaves, the substrate rolls up parents.
 
 ---
 
 ## Phase 3 — Concurrency & signal protocol
+
+**Status.** Not started. The orchestrator loop is single-threaded and
+dispatches one drone at a time. No claim-and-lease yet, no signal protocol.
 
 **Demo.** Multiple drones run concurrently. No double-work. No corrupt findings. No duplicate package installs. No two drones editing the same file.
 
@@ -66,13 +71,26 @@ This roadmap is living. As the architecture firms up under real runs, rewrite it
 
 ## Phase 4 — Skills & tool registry
 
-**Demo.** Drones load, use, author, and version skills. Packages install into a shared venv; tool registry tracks them; stale tools get pruned.
+**Status (partial).** Substrate is in: tools live as `:Tool` nodes in the
+graph alongside Gaps and Findings, with edges `(:Tool)-[:USED_BY]->(:Gap)`
+and `(:Tool)-[:DEPENDS_ON]->(:Tool)`. Builtins are mirrored to the graph at
+substrate init from a Python registry; drones can install a new tool at
+runtime (e.g. `pip install playwright`) and call `cm_register_tool` to add
+it to the registry as `kind=installed`, recording the install commands and
+usage example. Future drones discover via `cm_list_tools`, pull into their
+active set via `cm_request_tool`, and execute installed tools through
+`terminal_run` using the recorded usage example. Alignment can flag a
+suspicious registration (`Tool.flagged_by_alignment`).
 
-**Requires.** Claude Code skills loader · skill IDs as `content-hash` · semver in frontmatter · evolution log (`parent_hash`) · trust tiers (`authored_by`, `validated`) · skill selection via vector search + findings-of-past-skill-use (`SkillInvocation` nodes) · tool registry CRUD · shared venv management · install-check integrated with the signal protocol.
+**Still to do.** Skills loader (Claude Code style) · `SkillInvocation` finding
+type that ranks past usage · vector search over tool descriptions · shared
+venv lifecycle management · stale-tool pruning · trust tiers beyond the
+single boolean flag.
 
-**Out of scope.** Downloading skills from the internet (trust not yet solved) · full preset suite beyond gap finder + alignment.
-
-**Acceptance.** A drone authors a new skill mid-run; a later drone finds it via search, loads it, uses it; the invocation is recorded as a `SkillInvocation` finding with outcome metadata; a third drone working a similar gap finds the skill by past-success ranking.
+**Demo target.** A drone authors a new skill mid-run; a later drone finds it
+via search, loads it, uses it; the invocation is recorded as a
+`SkillInvocation` finding with outcome metadata; a third drone working a
+similar gap finds the skill by past-success ranking.
 
 **Blocks.** Phase 5.
 

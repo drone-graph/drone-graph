@@ -5,14 +5,16 @@ An execution substrate for AI swarms organized as a hivemind, not a corporate or
 Read in order:
 
 1. [`core-idea/drone-theory.md`](core-idea/drone-theory.md) — the thesis
-2. [`architecture-notes/synthesis.md`](architecture-notes/synthesis.md) — architecture overview
-3. [`ROADMAP.md`](ROADMAP.md) — build plan
-4. [`architecture-notes/phase-0-and-1.md`](architecture-notes/phase-0-and-1.md) — what's built so far
-5. [`architecture-notes/model-registry.md`](architecture-notes/model-registry.md) — registry JSON, CLI, and enrichment (when you maintain or extend the catalog)
+2. [`core-idea/architectural_overview.md`](core-idea/architectural_overview.md) — consolidated architecture
+3. [`core-idea/decomposition.md`](core-idea/decomposition.md) — gap / finding mechanics + Gap Finding + Alignment behavior
+4. [`architecture-notes/modules.md`](architecture-notes/modules.md) — per-module intent and current CLI surface
+5. [`ROADMAP.md`](ROADMAP.md) — build plan
+6. [`architecture-notes/phase-0-and-1.md`](architecture-notes/phase-0-and-1.md) — what's built so far
+7. [`architecture-notes/model-registry.md`](architecture-notes/model-registry.md) — registry JSON, CLI, and enrichment (when you maintain or extend the catalog)
 
 ## Status
 
-**Phase 0 + Phase 1.** A single drone closes a single hand-written gap end-to-end; the orchestrator honours `BLOCKED_BY` dependencies, executes a gap DAG in topological order, retries once on failure, and propagates terminal failure to descendants. No gap finder, no concurrency, no skills yet. See [`ROADMAP.md`](ROADMAP.md) for what comes next.
+**Unified drone runtime running end-to-end.** One drone class, one system prompt (`hivemind.md`); the gap it's dispatched against — and that gap's `tool_loadout` — determines what it does. Two preset gaps minted at substrate init: `preset:gap_finding` (structural author; batches up to 5 edits per invocation including `decompose`, `create`, `retire`, `reopen`, `rewrite_intent`, `noop`) and `preset:alignment` (observational; batches up to 5 findings). Emergent gaps minted by Gap Finding get a default loadout (a persistent bash shell + `cm_read_gap` + `cm_write_finding` with on-disk `artefact_paths` + `cm_register_tool` + `cm_request_tool`). Every drone gets universal `cm_*` query tools — no pre-rendered tree, drones query what they need. Tools live as `:Tool` nodes in the graph; drones can install new tools at runtime and register them for future drones. The substrate auto-fills an emergent parent gap when all its non-retired children are filled, emitting a `system`-authored finding. The combined orchestrator loop runs the whole thing against any of the packaged root seeds or synthetic gaps. No concurrency yet. See [`ROADMAP.md`](ROADMAP.md) for what comes next.
 
 ## Setup
 
@@ -41,56 +43,49 @@ drone-graph reset-db
 
 ## Running the demos
 
-### Phase 0 — single gap, single drone
+### Single drone, single gap
 
 ```sh
-drone-graph reset-db
-drone-graph submit-gap "Create /tmp/hello.txt containing 'hi from the swarm'"
-drone-graph run-orchestrator        # Ctrl+C after the idle log appears
+drone-graph reset-db                # also re-mints preset gaps + tool registry
+GAP=$(drone-graph gap create \
+  --intent "Create /tmp/hello.txt containing exactly 'hi from the swarm' plus a trailing newline." \
+  --criteria "/tmp/hello.txt exists with the exact required content.")
+drone-graph drone run "$GAP"        # spawns one drone, runs to fill or fail
 cat /tmp/hello.txt
-drone-graph gap list                # should show status=closed, attempts=1
+drone-graph gap show "$GAP"         # status: filled
 ```
 
-In Neo4j Browser, confirm the shape:
+### Combined orchestrator loop (Gap Finding + Alignment + workers)
 
-```cypher
-MATCH (g:Gap)-[:CLOSED_WITH]->(f:Finding)-[:PRODUCED_BY]->(d:Drone) RETURN g, f, d
-```
-
-### Phase 1 — gap DAG with topological execution
-
-Three gaps where B depends on A and C depends on B. Submitted in dependency order (blockers must exist at submit-time).
+Run the unified loop against a packaged scenario. Real workers spawn on emergent
+leaves every N Gap Finding cycles when `--worker-every` is set.
 
 ```sh
-drone-graph reset-db
-
-A_ID=$(drone-graph submit-gap \
-  "Create /tmp/swarm-demo.txt containing the single line 'A'" \
-  | awk '{print $3}')
-
-B_ID=$(drone-graph submit-gap \
-  "Append a second line 'B' to /tmp/swarm-demo.txt" \
-  --blocked-by "$A_ID" | awk '{print $3}')
-
-C_ID=$(drone-graph submit-gap \
-  "Append a third line 'C' to /tmp/swarm-demo.txt" \
-  --blocked-by "$B_ID" | awk '{print $3}')
-
-drone-graph gap list                # all three open, attempts=0
-drone-graph run-orchestrator        # Ctrl+C after the idle log appears
-
-cat /tmp/swarm-demo.txt             # A / B / C in order
-drone-graph gap list                # all three closed, attempts=1
-drone-graph gap show "$C_ID"        # shows blocked_by=$B_ID
+python -m drone_graph.orchestrator.loop \
+  --scenario coffee-pivot-b2b \
+  --model claude-haiku-4-5-20251001 \
+  --worker-every 2 \
+  --worker-max-turns 8 \
+  --out var/runs/coffee-demo
 ```
 
-Verify execution order matches dependency order (not insertion order) in Neo4j Browser:
+Per-run artefacts land under `var/runs/<scenario>-<ts>/`: `events.jsonl`,
+`tape.jsonl`, `timeline.md`, `tree.md`, `summary.md`. Inspect the substrate
+mid-run from another shell:
+
+```sh
+drone-graph gap tree
+drone-graph gap list --status unfilled
+drone-graph finding list --author worker -n 20
+drone-graph finding show <id-prefix>
+```
+
+In Neo4j Browser ([http://localhost:7474](http://localhost:7474)) you can see the full graph: gaps,
+findings, tools, and the relationships between them.
 
 ```cypher
-MATCH (d:Drone) RETURN d.gap_id, d.spawned_at ORDER BY d.spawned_at
+MATCH (t:Tool) RETURN t.name, t.kind ORDER BY t.kind, t.name
 ```
-
-Orchestrator tapes accumulate under `var/tapes/` as JSONL.
 
 ## Model registry
 
@@ -124,7 +119,11 @@ pytest                              # all tests; integration tests skip if Neo4j
 pytest -m 'not integration'         # unit tests only
 ```
 
-The Phase 1 acceptance tests in `tests/test_phase1_topological.py` hit real Neo4j but inject a stub drone, so they're free and deterministic.
+`tests/test_phase1_topological.py` was written against an earlier API and is
+currently broken; it'll be replaced as the unified runtime stabilizes. For
+substrate invariants (auto-rollup, `rewrite_intent` guardrails, etc.) see
+`experiments/rollup_check.py`, which exercises the live store against real
+Neo4j and is the authoritative regression check today.
 
 ## License
 
