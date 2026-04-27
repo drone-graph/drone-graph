@@ -1,0 +1,15 @@
+{
+  "description": "Phase 3 stress scenario. The root deliberately decomposes into >=4 leaves that all want to write to the same report file (file-claim contention) plus a shared install of requests + pandas (install-race contention). One mid-run user_input retires a single leaf to exercise the cancellation flow.",
+  "root": "06-parallel-stress",
+  "alignment_every_n_gf": 3,
+  "max_gf_invocations": 12,
+  "events": [
+    {
+      "at_gf_tick": 4,
+      "author": "user",
+      "kind": "user_input",
+      "summary": "Drop the Q4 CSV section from scope — the upstream feed for that quarter is offline this week and we don't want the run blocked on it. Retire any leaf scoped to Q4 and continue with Q1-Q3.",
+      "affected_gap_ids": []
+    }
+  ]
+}

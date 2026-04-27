@@ -18,10 +18,14 @@ the gap's intent text and tool loadout.
 from __future__ import annotations
 
 import json
+import threading
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
+
+if TYPE_CHECKING:
+    from drone_graph.orchestrator.tape import EventTape as EventTape
 
 from drone_graph.drones.providers import (
     ChatClient,
@@ -31,7 +35,9 @@ from drone_graph.drones.providers import (
     cost_usd,
 )
 from drone_graph.gaps import Finding, Gap, GapStore
+from drone_graph.gaps.records import FindingAuthor, FindingKind
 from drone_graph.prompts import load_hivemind
+from drone_graph.signals import SignalStore
 from drone_graph.substrate import Substrate
 from drone_graph.terminal import Terminal, TerminalDead, TerminalTimeout
 from drone_graph.tools import (
@@ -44,6 +50,8 @@ from drone_graph.tools import (
 
 DEFAULT_MAX_TURNS = 20
 DEFAULT_COMMAND_TIMEOUT_S = 60.0
+DEFAULT_CLAIM_TTL_S = 60.0
+DEFAULT_HEARTBEAT_PERIOD_S = 20.0
 
 # Tools every emergent (non-preset) gap gets unless the gap explicitly
 # overrides ``tool_loadout``. Universal cm_* query tools are added on top.
@@ -53,6 +61,9 @@ DEFAULT_EMERGENT_LOADOUT = [
     "cm_write_finding",
     "cm_register_tool",
     "cm_request_tool",
+    "cm_acquire_file",
+    "cm_release_file",
+    "cm_install_package",
 ]
 
 # Tools that imply this drone needs a real bash terminal.
@@ -61,9 +72,11 @@ _TERMINAL_TOOLS = {"terminal_run"}
 
 @dataclass
 class DroneResult:
+    # "fill" | "fail" | "preset_done" | "max_turns" | "error" | "cancelled"
+    # | "claim_lost"
     drone_id: str
     gap_id: str
-    outcome: str  # "fill" | "fail" | "preset_done" | "max_turns" | "error"
+    outcome: str
     finding_id: str | None
     findings_written: int
     tokens_in: int
@@ -71,6 +84,46 @@ class DroneResult:
     cost_usd: float
     turns_used: int
     error: str | None = None
+
+
+class _Heartbeat(threading.Thread):
+    """Background renewer for the gap claim. Stops itself on lost claim."""
+
+    def __init__(
+        self,
+        signals: SignalStore,
+        kind: str,
+        key: str,
+        drone_id: str,
+        ttl_s: float,
+        period_s: float,
+    ) -> None:
+        super().__init__(daemon=True, name=f"heartbeat-{drone_id[:8]}")
+        self._signals = signals
+        self._kind = kind
+        self._key = key
+        self._drone_id = drone_id
+        self._ttl_s = ttl_s
+        self._period_s = period_s
+        self._stop = threading.Event()
+        self._lost = False
+
+    def run(self) -> None:
+        while not self._stop.wait(self._period_s):
+            if not self._signals.heartbeat(
+                self._kind, self._key, self._drone_id, self._ttl_s
+            ):
+                self._lost = True
+                return
+
+    def stop(self) -> None:
+        self._stop.set()
+        if self.is_alive():
+            self.join(timeout=2.0)
+
+    @property
+    def lost(self) -> bool:
+        return self._lost
 
 
 @dataclass
@@ -188,8 +241,19 @@ def run_drone(
     max_turns: int = DEFAULT_MAX_TURNS,
     command_timeout_s: float = DEFAULT_COMMAND_TIMEOUT_S,
     tape: "EventTape | None" = None,
+    signals: SignalStore | None = None,
+    claim_ttl_s: float = DEFAULT_CLAIM_TTL_S,
+    heartbeat_period_s: float = DEFAULT_HEARTBEAT_PERIOD_S,
+    run_id: str | None = None,
 ) -> DroneResult:
-    """Dispatch one drone against ``gap_or_id`` and run until termination."""
+    """Dispatch one drone against ``gap_or_id`` and run until termination.
+
+    When ``signals`` is supplied (Phase 3+), the runtime acquires a ``gap``
+    claim before the first turn, heartbeats it on a background thread, checks
+    for a soft-cancel signal at every turn boundary, and releases on exit. If
+    the claim cannot be acquired (another drone already holds it), the
+    runtime returns ``outcome='claim_lost'`` without making any model calls.
+    """
     gap = (
         gap_or_id
         if isinstance(gap_or_id, Gap)
@@ -200,6 +264,39 @@ def run_drone(
 
     drone_id = str(uuid4())
     spawned_at = _now_iso()
+
+    heartbeat: _Heartbeat | None = None
+    if signals is not None:
+        if not signals.try_acquire(
+            "gap", gap.id, drone_id, ttl_s=claim_ttl_s
+        ):
+            if tape is not None:
+                tape.emit(
+                    "drone.claim_lost",
+                    drone_id=drone_id,
+                    gap_id=gap.id,
+                )
+            return DroneResult(
+                drone_id=drone_id,
+                gap_id=gap.id,
+                outcome="claim_lost",
+                finding_id=None,
+                findings_written=0,
+                tokens_in=0,
+                tokens_out=0,
+                cost_usd=0.0,
+                turns_used=0,
+                error=None,
+            )
+        heartbeat = _Heartbeat(
+            signals,
+            "gap",
+            gap.id,
+            drone_id,
+            ttl_s=claim_ttl_s,
+            period_s=heartbeat_period_s,
+        )
+        heartbeat.start()
 
     active = set(_resolve_loadout(gap))
     suggested = set(gap.tool_suggestions or [])
@@ -215,6 +312,7 @@ def run_drone(
         tool_store=tool_store,
         terminal_box=terminal_box,
         tape=tape,
+        signals=signals,
         active_tool_names=active,
         suggested_tool_names=suggested,
     )
@@ -243,6 +341,35 @@ def run_drone(
     try:
         while turns_used < max_turns:
             turns_used += 1
+            if signals is not None:
+                lost = heartbeat is not None and heartbeat.lost
+                cancelled_flag = signals.is_cancelled("gap", gap.id)
+                if cancelled_flag or lost:
+                    reason = "cancelled" if cancelled_flag else "lease lost"
+                    cancelled = store.append_finding(
+                        tick=tick,
+                        author=FindingAuthor.worker,
+                        kind=FindingKind.cancelled,
+                        summary=(
+                            f"drone {drone_id[:8]} {reason} at turn "
+                            f"{turns_used} after writing "
+                            f"{state.findings_written} findings"
+                        ),
+                        affected_gap_ids=[gap.id],
+                    )
+                    state.terminate = (cancelled, "cancelled")
+                    state.findings_written += 1
+                    outcome = "cancelled"
+                    if tape is not None:
+                        tape.emit(
+                            "drone.cancelled",
+                            drone_id=drone_id,
+                            gap_id=gap.id,
+                            turn=turns_used,
+                            reason=reason,
+                            finding_id=cancelled.id,
+                        )
+                    break
             tool_defs = _render_tool_defs(ctx.active_tool_names)
             try:
                 resp = client.chat(system=system, messages=messages, tools=tool_defs)
@@ -253,6 +380,11 @@ def run_drone(
             usage_total.tokens_in += resp.usage.tokens_in
             usage_total.tokens_out += resp.usage.tokens_out
 
+            turn_cost = cost_usd(client.provider, client.model, resp.usage)
+            ceiling_crossed = False
+            if signals is not None and run_id is not None:
+                ceiling_crossed = not signals.add_cost(run_id, turn_cost)
+
             if tape is not None:
                 tape.emit(
                     "drone.turn",
@@ -261,8 +393,34 @@ def run_drone(
                     stop_reason=resp.stop_reason,
                     tokens_in=resp.usage.tokens_in,
                     tokens_out=resp.usage.tokens_out,
+                    cost_usd=turn_cost,
                     tool_calls=[tc.name for tc in resp.tool_calls],
                 )
+
+            if ceiling_crossed:
+                be = store.append_finding(
+                    tick=tick,
+                    author=FindingAuthor.worker,
+                    kind=FindingKind.budget_exceeded,
+                    summary=(
+                        f"drone {drone_id[:8]} hit swarm cost ceiling at "
+                        f"turn {turns_used}; total run spend exceeded "
+                        f"--max-cost-usd"
+                    ),
+                    affected_gap_ids=[gap.id],
+                )
+                state.terminate = (be, "budget_exceeded")
+                state.findings_written += 1
+                outcome = "budget_exceeded"
+                if tape is not None:
+                    tape.emit(
+                        "drone.budget_exceeded",
+                        drone_id=drone_id,
+                        gap_id=gap.id,
+                        turn=turns_used,
+                        finding_id=be.id,
+                    )
+                break
 
             if not resp.tool_calls:
                 # Preset drones may have nothing to do this turn — no_issue
@@ -312,6 +470,10 @@ def run_drone(
     finally:
         if terminal_box is not None:
             terminal_box.close()
+        if heartbeat is not None:
+            heartbeat.stop()
+        if signals is not None:
+            signals.release_all_for_drone(drone_id)
 
     # If an emergent drone exited without a terminal finding, record a fail
     # finding so Gap Finding has something to react to. Preset drones don't
@@ -457,6 +619,3 @@ def _write_drone_node(
         )
 
 
-# Forward-declare for type hint; the real class lives in orchestrator.tape.
-class EventTape:  # pragma: no cover - structural protocol
-    def emit(self, event: str, **fields: Any) -> None: ...

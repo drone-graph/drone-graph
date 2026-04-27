@@ -131,6 +131,26 @@ def reset_db() -> None:
     typer.echo("db reset (preset gaps + tool registry re-minted)")
 
 
+@app.command("reset-signals")
+def reset_signals(
+    db_path: Path = typer.Option(
+        None,
+        "--signal-db",
+        help="Sidecar SQLite path (default: var/signals.db).",
+    ),
+) -> None:
+    """Wipe the Phase 3 sidecar (claims, leases, install registry, buckets)."""
+    from drone_graph.signals import SQLiteSignalStore, default_db_path
+
+    target = db_path if db_path is not None else default_db_path()
+    store = SQLiteSignalStore(target)
+    try:
+        store.reset_all()
+    finally:
+        store.close()
+    typer.echo(f"signals reset ({target})")
+
+
 @gap_app.command("list")
 def gap_list(
     status: str | None = typer.Option(
