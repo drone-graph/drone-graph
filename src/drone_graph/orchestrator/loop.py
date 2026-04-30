@@ -56,6 +56,7 @@ DEFAULT_WORKER_EVERY = 0  # 0 = do not spawn real workers
 DEFAULT_WORKER_MAX_TURNS = 20
 DEFAULT_PRESET_MAX_TURNS = 6  # preset drones rarely need more
 MAX_CONSECUTIVE_GF_ERRORS = 3
+_RUN_ARTIFACT_ENCODING = "utf-8"
 
 
 def _findings_at_tick(store: GapStore, tick: int) -> list[Finding]:
@@ -182,7 +183,11 @@ def run_combined_loop(
             }
         )
 
-    events_log = (out_dir / "events.jsonl").open("w") if out_dir is not None else None
+    events_log = (
+        (out_dir / "events.jsonl").open("w", encoding=_RUN_ARTIFACT_ENCODING)
+        if out_dir is not None
+        else None
+    )
 
     def ev_write(record: dict[str, Any]) -> None:
         if events_log is not None:
@@ -554,7 +559,8 @@ def _write_run_artifacts(
         f"Worker drones: {worker_count}   Events fired: {events_fired}\n"
         f"Active leaves: {len(store.leaves())}\n\n"
         f"## Tree\n\n```\n{render_tree(store)}\n```\n\n"
-        f"## Findings\n\n```\n{render_findings(store, limit=9999)}\n```\n"
+        f"## Findings\n\n```\n{render_findings(store, limit=9999)}\n```\n",
+        encoding=_RUN_ARTIFACT_ENCODING,
     )
 
     lines = [
@@ -570,7 +576,7 @@ def _write_run_artifacts(
             f"| {row['tick']} | {row['actor']} | `{row['event']}` | "
             f"${row['cost_usd']:.3f} | {summary_cell} |"
         )
-    timeline_path.write_text("\n".join(lines) + "\n")
+    timeline_path.write_text("\n".join(lines) + "\n", encoding=_RUN_ARTIFACT_ENCODING)
 
     all_gaps = store.all_gaps()
     summary_path.write_text(
@@ -590,7 +596,8 @@ def _write_run_artifacts(
         f"- GF verb histogram: {gf_verbs}\n"
         f"- Alignment kind histogram: {align_kinds}\n"
         f"- Worker outcome histogram: {worker_outcomes}\n"
-        f"- cost: ${total_cost:.3f}\n"
+        f"- cost: ${total_cost:.3f}\n",
+        encoding=_RUN_ARTIFACT_ENCODING,
     )
 
 

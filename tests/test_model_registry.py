@@ -131,7 +131,7 @@ def test_resolve_for_tier(tier: ModelTier) -> None:
 
 def test_resolve_for_gap() -> None:
     reg = _populated_registry()
-    gap = Gap(description="x", model_tier=ModelTier.cheap)
+    gap = Gap(intent="x", criteria="x", model_tier=ModelTier.cheap)
     entry = reg.resolve_for_gap(gap)
     assert entry.dgraph_model_id == "a"
 

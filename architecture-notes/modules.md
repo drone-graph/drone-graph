@@ -140,8 +140,12 @@ fail or max turns.
   finding id, findings_written, token / cost / turn counts.
 - `Provider`, `make_client`, `ChatClient`, `ChatResponse`, `ToolCall`,
   `Usage`, `cost_usd`, `resolve_orchestrator_provider_model` —
-  `providers.py`. Provider clients are wrapped in bounded exponential
-  backoff for transient errors.
+  `providers.py`. Uses **`ANTHROPIC_API_KEY`** / **`OPENAI_API_KEY`** (SDK
+  convention). When CLI omits `--provider`, resolution is: only Anthropic key
+  → Anthropic; only OpenAI key → OpenAI; **both keys → Anthropic** (pass
+  `--provider openai` to use OpenAI). Default models: `claude-sonnet-4-6`,
+  `gpt-4o`. Provider clients are wrapped in bounded exponential backoff for
+  transient errors.
 
 **Grows into.** Skill loading (Phase 4) · self-parameter-setting tool
 (Phase 4) · budget tracking (Phase 5) · `ModelRegistry.resolve_for_gap`

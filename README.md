@@ -18,16 +18,31 @@ Read in order:
 
 ## Setup
 
-Requires Python 3.12+, [Colima](https://github.com/abiosoft/colima) (or Docker Desktop), and an Anthropic API key.
+Requires Python 3.12+, [Colima](https://github.com/abiosoft/colima) (or Docker Desktop), and **at least one** LLM vendor API key: **`ANTHROPIC_API_KEY`** and/or **`OPENAI_API_KEY`**.
 
 ```sh
 colima start
 docker compose up -d neo4j
 source .venv/bin/activate
-export ANTHROPIC_API_KEY=...
+export ANTHROPIC_API_KEY=...   # optional if you use OpenAI only
+export OPENAI_API_KEY=...      # optional if you use Anthropic only
 ```
 
 Neo4j Browser: http://localhost:7474 (user `neo4j`, password `drone-graph-dev`).
+
+Drones and the orchestrator loop talk to either **Anthropic (Claude)** or **OpenAI (GPT)** through those same keys. **If only one key is exported**, that provider is used and you do not need any extra flags—for example, with just an OpenAI key, `drone-graph drone run "$GAP"` picks GPT with a sensible default model.
+
+### Behaviour when both keys are present
+
+*This describes the **current** CLI and orchestrator setup only; tier- or registry-driven routing may change defaults later.*
+
+If **both** keys are in your environment, the stack **defaults to Claude** so your runs do not hop between vendors without you noticing. To use OpenAI for that run anyway, pass **`--provider openai`** (and **`--model`** if you want a specific GPT id):
+
+```sh
+drone-graph drone run "$GAP" --provider openai --model gpt-4o
+```
+
+The same idea applies to **`python -m drone_graph.orchestrator.loop`**. Defaults and wiring are in [`src/drone_graph/drones/providers.py`](src/drone_graph/drones/providers.py).
 
 ### Windows
 
@@ -58,15 +73,32 @@ drone-graph gap show "$GAP"         # status: filled
 ### Combined orchestrator loop (Gap Finding + Alignment + workers)
 
 Run the unified loop against a packaged scenario. Real workers spawn on emergent
-leaves every N Gap Finding cycles when `--worker-every` is set.
+leaves every N Gap Finding cycles when `--worker-every` is set. Pick the block
+that matches the vendor key you are using (use **`--provider`** when both keys
+are in your environment—see **Behaviour when both keys are present** above).
+
+**Anthropic (Claude):**
 
 ```sh
 python -m drone_graph.orchestrator.loop \
   --scenario coffee-pivot-b2b \
+  --provider anthropic \
   --model claude-haiku-4-5-20251001 \
   --worker-every 2 \
   --worker-max-turns 8 \
-  --out var/runs/coffee-demo
+  --out var/runs/coffee-demo-haiku
+```
+
+**OpenAI (GPT):**
+
+```sh
+python -m drone_graph.orchestrator.loop \
+  --scenario coffee-pivot-b2b \
+  --provider openai \
+  --model gpt-4o \
+  --worker-every 2 \
+  --worker-max-turns 8 \
+  --out var/runs/coffee-demo-gpt4o
 ```
 
 Per-run artefacts land under `var/runs/<scenario>-<ts>/`: `events.jsonl`,
@@ -91,7 +123,7 @@ MATCH (t:Tool) RETURN t.name, t.kind ORDER BY t.kind, t.name
 
 The **model registry** is the JSON source of truth for which models exist in the system, how they are priced, what they support, and how **`Gap.model_tier`** maps to a concrete **`provider`** + **`vendor_model_id`** for routing. The packaged file is [`src/drone_graph/model_registry/model_registry.json`](src/drone_graph/model_registry/model_registry.json). Deeper schema, resolution rules, and enrichment behavior live in [`architecture-notes/model-registry.md`](architecture-notes/model-registry.md).
 
-**Prerequisites:** set **`OPENAI_API_KEY`** and/or **`ANTHROPIC_API_KEY`** (at least one vendor key is required to list models from APIs; both keys unlock the richer doc-enrichment path in that note).
+**Prerequisites:** set **`OPENAI_API_KEY`** and/or **`ANTHROPIC_API_KEY`** — same variables as **LLM providers** above for runtime. For the registry CLI specifically: at least one key is required to list models from APIs; both keys unlock the richer doc-enrichment path described in that note.
 
 ```sh
 export OPENAI_API_KEY=...          # and/or ANTHROPIC_API_KEY=...
