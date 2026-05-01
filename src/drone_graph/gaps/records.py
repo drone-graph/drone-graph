@@ -41,6 +41,11 @@ class FindingKind(StrEnum):
     # Worker outcomes.
     fill = "fill"
     fail = "fail"
+    # Worker cancelled mid-flight (gap retired or budget exceeded). Substrate
+    # never deletes the work the drone did before the cancel — those findings
+    # remain attached to the (now retired) gap as audit.
+    cancelled = "cancelled"
+    budget_exceeded = "budget_exceeded"
     # Alignment observations.
     alignment_invalidated_premise = "alignment_invalidated_premise"
     alignment_unmet_intent = "alignment_unmet_intent"

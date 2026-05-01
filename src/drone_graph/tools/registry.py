@@ -60,6 +60,7 @@ class DroneContext:
     tool_store: Any  # ToolStore
     terminal_box: Any | None = None  # _TerminalBox | None (None for non-terminal drones)
     tape: Any | None = None
+    signals: Any | None = None  # SignalStore — None when running unsupervised
     # Mutable: cm_request_tool adds names; runtime re-renders tool defs each turn.
     active_tool_names: set[str] = field(default_factory=set)
     suggested_tool_names: set[str] = field(default_factory=set)
@@ -70,19 +71,22 @@ class DroneContext:
 _REGISTRY: dict[str, BuiltinTool] = {}
 
 
+_Dispatcher = Callable[[dict[str, Any], "DroneContext"], "ToolResult"]
+
+
 def register_tool(
     name: str,
     description: str,
     input_schema: dict[str, Any],
     *,
     universal_query: bool = False,
-) -> Callable[[Callable[..., str]], Callable[..., str]]:
+) -> Callable[[_Dispatcher], _Dispatcher]:
     """Decorator: add a builtin tool to the registry.
 
     The decorated function becomes the tool's dispatcher.
     """
 
-    def deco(fn: Callable[..., str]) -> Callable[..., str]:
+    def deco(fn: _Dispatcher) -> _Dispatcher:
         if name in _REGISTRY:
             raise ValueError(f"tool {name!r} already registered")
         _REGISTRY[name] = BuiltinTool(
