@@ -10,13 +10,6 @@ Future: enrichment runs as a **Drone**; **web search** becomes a **Skill** from 
 **skills marketplace**, not hard-coded API tool wiring in this package.
 """
 
-from drone_graph.model_registry.generate import (
-    default_packaged_registry_json_path,
-    enrich_registry_models,
-    generate_registry_file,
-    sync_registry_file,
-    update_registry_file,
-)
 from drone_graph.model_registry.records import (
     ModelRegistryEntry,
     ModelRegistryFile,
@@ -37,3 +30,18 @@ __all__ = [
     "sync_registry_file",
     "update_registry_file",
 ]
+
+
+def __getattr__(name: str):  # type: ignore[no-untyped-def]
+    _generate_names = {
+        "default_packaged_registry_json_path",
+        "enrich_registry_models",
+        "generate_registry_file",
+        "sync_registry_file",
+        "update_registry_file",
+    }
+    if name in _generate_names:
+        from drone_graph.model_registry import generate  # noqa: I001
+
+        return getattr(generate, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
