@@ -1,8 +1,9 @@
 # Phase 3 — concurrency & signal protocol (plan)
 
-Status as of 2026-04-27: not started. Phases 0–2 land in the unified runtime;
-the orchestrator loop is single-threaded. This document is the build plan
-agreed for Phase 3.
+Status as of 2026-05-02: **merged** (2026-05-01, commit `35e3b09`). This
+document is preserved as the design record. The plan was followed closely;
+two intentional drifts from what's written below are noted in the
+"Drift from plan" section at the bottom.
 
 ## Goal
 
@@ -269,3 +270,21 @@ Designed to hit every claim type at once. Sketch:
 Skill authoring, vector search over tools, memory pruning preset, Secret
 Store, `HumanActionRequired` gaps, multi-host (Redis sidecar swap-in is
 *designed for* but not *built*).
+
+## Drift from plan (recorded 2026-05-02)
+
+Two deliberate deviations from the plan above:
+
+1. **`run_combined_loop` was not reduced to a thin shim over
+   `Scheduler(max_workers=1)`.** The legacy single-threaded loop in
+   `orchestrator/loop.py` is unchanged and runs alongside the new
+   scheduler. Reason: keeping the legacy path independent preserved a
+   known-good single-threaded debugger and avoided coupling the Phase 3
+   ship to a refactor of the existing loop. A future phase can collapse
+   them once the scheduler has more soak time.
+2. **`parallel-stress` scenario shipped at the standard scenario layout,
+   not under `seeds/scenarios/`.** Root markdown lives at
+   `src/drone_graph/seeds/roots/06-parallel-stress.md`; the mid-run retire
+   event is at `src/drone_graph/seeds/events/parallel-stress.json`. The
+   `seeds/scenarios/` directory in the plan was an artefact of an earlier
+   layout idea; the existing roots+events split was kept.

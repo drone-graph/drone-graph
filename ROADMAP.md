@@ -4,14 +4,18 @@ Each phase produces a demoable artifact that stands on its own. Build order is b
 
 This roadmap is living. As the architecture firms up under real runs, rewrite it. Absolute dates only — no "next week."
 
-> **Status (2026-04):** Phases 0–2 effectively land in the unified runtime —
-> one drone class, gaps as work units, a graph-backed `:Tool` registry, preset
-> gaps for Gap Finding and Alignment, batched structural edits, deterministic
-> auto-rollup, and `rewrite_intent`. Real worker drones close emergent leaves
-> against scenarios like `coffee-pivot-b2b` end to end. Phase 4 has its
+> **Status (2026-05):** Phases 0–3 land. Phases 0–2 brought the unified
+> runtime — one drone class, gaps as work units, a graph-backed `:Tool`
+> registry, preset gaps for Gap Finding and Alignment, batched structural
+> edits, deterministic auto-rollup, and `rewrite_intent`. Phase 3 (merged
+> 2026-05-01) added the SQLite sidecar (`signals/`), subprocess-per-drone
+> runner, concurrent scheduler, cooperative cancellation with
+> `FindingKind.CANCELLED`, the three concurrency builtins
+> (`cm_acquire_file` / `cm_release_file` / `cm_install_package`), and a
+> swarm-wide cost ceiling. The legacy single-threaded `run_combined_loop`
+> is unchanged and runs alongside the scheduler. Phase 4 has its
 > *substrate* (Tool nodes + `cm_register_tool` + `cm_request_tool` + drone-
-> installed tool nodes) but no skills marketplace yet. Phase 3 (concurrency
-> + signal protocol) is unstarted: the loop is still single-threaded.
+> installed tool nodes) but no skills marketplace yet.
 
 ---
 
@@ -54,16 +58,30 @@ workers fill leaves, the substrate rolls up parents.
 
 ## Phase 3 — Concurrency & signal protocol
 
-**Status.** Not started. The orchestrator loop is single-threaded and
-dispatches one drone at a time. No claim-and-lease yet, no signal protocol.
+**Status.** Done (merged 2026-05-01). SQLite sidecar at `var/signals.db`
+(`signals/` module) holds claims, leases, install registry, per-provider
+token buckets, and the swarm cost meter behind a `SignalStore` Protocol.
+Drones run as `python -m drone_graph.drones.runner` subprocesses; the
+concurrent scheduler (`orchestrator/scheduler.py`) runs at most one preset
+slot in parallel with up to `--max-workers` workers. Cooperative
+cancellation: when GF retires a held gap, the worker writes a
+`FindingKind.CANCELLED` finding at the next turn boundary and exits;
+SIGKILL after a 90s grace. Three concurrency builtins shipped:
+`cm_acquire_file`, `cm_release_file`, `cm_install_package`. A swarm-wide
+`--max-cost-usd` ceiling stops further spawns and writes a
+`budget_exceeded` finding when crossed. The legacy single-threaded
+`run_combined_loop` is unchanged and still selectable.
 
-**Demo.** Multiple drones run concurrently. No double-work. No corrupt findings. No duplicate package installs. No two drones editing the same file.
+**Demo.** `python -m drone_graph.orchestrator.scheduler --scenario
+parallel-stress --max-workers 4 --max-cost-usd 1.00` — root in
+`seeds/roots/06-parallel-stress.md`, retire event in
+`seeds/events/parallel-stress.json`. Workers contend on file writes,
+race on package installs, and one is cancelled mid-flight.
 
-**Requires.** Gap claim + lease with TTL · heartbeat renewal · file open registry · package install check · optimistic locking on findings writes (CAS via version property) · detached-process / port registries · dead-lease reaper.
-
-**Out of scope.** Skill authoring.
-
-**Acceptance.** Run a goal that produces ≥5 concurrently-workable gaps. Verify: no gap worked twice, no lost-update on findings, no duplicate `pip install` races, expired leases get reclaimed.
+**Acceptance.** Asserted by `tests/test_signal_store.py` and
+`tests/test_concurrency_tools.py`. End-to-end against `coffee-pivot-b2b`
+on Haiku showed concurrent worker overlap, cancellation, and budget
+enforcement (per the merge-commit verification note).
 
 **Blocks.** Phase 4+.
 
