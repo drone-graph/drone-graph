@@ -5,7 +5,7 @@ in the registry before any drone runs.
 """
 
 from drone_graph.tools import builtins  # noqa: F401  (eager import for side effects)
-from drone_graph.tools.records import Tool, ToolKind, empty_input_schema
+from drone_graph.tools.records import Tool, ToolKind, TrustTier, empty_input_schema
 from drone_graph.tools.registry import (
     BuiltinTool,
     DroneContext,
@@ -17,7 +17,8 @@ from drone_graph.tools.registry import (
     to_anthropic_tool_def,
     universal_query_tool_names,
 )
-from drone_graph.tools.store import ToolStore
+from drone_graph.tools.store import ToolStore, is_discoverable
+from drone_graph.tools.trust import effective_trust
 
 __all__ = [
     "BuiltinTool",
@@ -26,9 +27,12 @@ __all__ = [
     "ToolKind",
     "ToolResult",
     "ToolStore",
+    "TrustTier",
     "builtin_to_record",
+    "effective_trust",
     "empty_input_schema",
     "get_builtin",
+    "is_discoverable",
     "list_builtins",
     "register_tool",
     "to_anthropic_tool_def",

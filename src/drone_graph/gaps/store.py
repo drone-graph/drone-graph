@@ -220,6 +220,9 @@ class GapStore:
             "  id: $finding_id, tick: $tick, author: $author, kind: $kind, "
             "  summary: $summary, affected_gap_ids: $affected, "
             "  artefact_paths: [], "
+            "  invocation_tool_name: null, invocation_outcome: null, "
+            "  invocation_provider: null, invocation_model: null, "
+            "  invocation_cost_usd: null, invocation_metrics_json: null, "
             "  created_at: datetime($finding_created_at) "
             "}) "
             "WITH p, f, child_ids "
@@ -291,6 +294,9 @@ class GapStore:
             "  id: $finding_id, tick: $tick, author: $author, kind: $kind, "
             "  summary: $summary, affected_gap_ids: $affected, "
             "  artefact_paths: [], "
+            "  invocation_tool_name: null, invocation_outcome: null, "
+            "  invocation_provider: null, invocation_model: null, "
+            "  invocation_cost_usd: null, invocation_metrics_json: null, "
             "  created_at: datetime($finding_created_at) "
             "}) "
             "CREATE (f)-[:AFFECTS]->(g)",
@@ -344,7 +350,9 @@ class GapStore:
             retired=GapStatus.retired.value,
             reason=reason,
         )
-        affected = [rows[0]["root_id"]] + list(rows[0]["desc_ids"]) if rows else [gap_id]
+        affected = (
+            [rows[0]["root_id"], *list(rows[0]["desc_ids"])] if rows else [gap_id]
+        )
 
         finding = Finding(
             tick=tick,
@@ -578,6 +586,13 @@ class GapStore:
         kind: FindingKind,
         summary: str,
         affected_gap_ids: list[str] | None = None,
+        artefact_paths: list[str] | None = None,
+        invocation_tool_name: str | None = None,
+        invocation_outcome: str | None = None,
+        invocation_provider: str | None = None,
+        invocation_model: str | None = None,
+        invocation_cost_usd: float | None = None,
+        invocation_metrics_json: str | None = None,
     ) -> Finding:
         finding = Finding(
             tick=tick,
@@ -585,6 +600,13 @@ class GapStore:
             kind=kind,
             summary=summary,
             affected_gap_ids=list(affected_gap_ids or []),
+            artefact_paths=list(artefact_paths or []),
+            invocation_tool_name=invocation_tool_name,
+            invocation_outcome=invocation_outcome,
+            invocation_provider=invocation_provider,
+            invocation_model=invocation_model,
+            invocation_cost_usd=invocation_cost_usd,
+            invocation_metrics_json=invocation_metrics_json,
         )
         self._write_finding_node(finding)
         return finding
@@ -712,6 +734,12 @@ class GapStore:
             "  id: $id, tick: $tick, author: $author, kind: $kind, "
             "  summary: $summary, affected_gap_ids: $affected, "
             "  artefact_paths: $paths, "
+            "  invocation_tool_name: $invocation_tool_name, "
+            "  invocation_outcome: $invocation_outcome, "
+            "  invocation_provider: $invocation_provider, "
+            "  invocation_model: $invocation_model, "
+            "  invocation_cost_usd: $invocation_cost_usd, "
+            "  invocation_metrics_json: $invocation_metrics_json, "
             "  created_at: datetime($created_at) "
             "}) "
             "WITH f "
@@ -725,5 +753,11 @@ class GapStore:
             summary=finding.summary,
             affected=finding.affected_gap_ids,
             paths=list(finding.artefact_paths),
+            invocation_tool_name=finding.invocation_tool_name,
+            invocation_outcome=finding.invocation_outcome,
+            invocation_provider=finding.invocation_provider,
+            invocation_model=finding.invocation_model,
+            invocation_cost_usd=finding.invocation_cost_usd,
+            invocation_metrics_json=finding.invocation_metrics_json,
             created_at=finding.created_at.isoformat(),
         )

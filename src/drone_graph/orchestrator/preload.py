@@ -1,16 +1,27 @@
 """Context preloaders for preset gaps.
 
-When a drone is dispatched against a preset gap, the runtime runs the gap's
-``context_preload`` queries and concatenates their renderings into the drone's
-initial user message. This avoids the wasted "obvious query" first turn for
-the common case while still letting the drone pull more via cm_* tools.
+When a drone is dispatched against a gap with ``context_preload`` set, the
+runtime runs the listed preloaders and concatenates their output into the
+drone's first user message. This avoids the wasted "obvious query" first turn
+for the common case while still letting the drone pull more via cm_* tools.
+
+Entries may be named substrate preloaders (``recent_findings``, ``leaves``,
+``tree_shape``) or ``skill_package:<path>`` to load a directory with
+``SKILL.md`` (see
+:func:`drone_graph.skills_marketplace.skill_packages.parse.render_skill_preload_section`).
 """
 
 from __future__ import annotations
 
-from typing import Callable
+from collections.abc import Callable
 
 from drone_graph.gaps import GapStore
+from drone_graph.skills_marketplace.skill_packages.parse import (
+    render_skill_preload_section,
+)
+from drone_graph.skills_marketplace.skill_packages.paths import resolve_skill_package_path
+
+SKILL_PACKAGE_PREFIX = "skill_package:"
 
 
 def _render_recent_findings(store: GapStore, limit: int = 30) -> str:
@@ -95,6 +106,11 @@ def render_preloads(store: GapStore, preload_names: list[str]) -> str:
     """Run the listed preloaders and concatenate their output."""
     parts: list[str] = []
     for name in preload_names:
+        if name.startswith(SKILL_PACKAGE_PREFIX):
+            suffix = name[len(SKILL_PACKAGE_PREFIX) :].strip()
+            resolved = resolve_skill_package_path(suffix)
+            parts.append(render_skill_preload_section(resolved))
+            continue
         fn = PRELOADERS.get(name)
         if fn is None:
             parts.append(f"## (unknown preload: {name})\n")

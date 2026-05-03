@@ -199,6 +199,8 @@ def run_combined_loop(
     if gf_preset is None or align_preset is None:
         raise RuntimeError("preset gaps not minted; init_collective_mind failed")
 
+    loop_started = time.time()
+
     try:
         while gf_count < max_gf:
             # 1. Inject scheduled events.
@@ -218,7 +220,11 @@ def run_combined_loop(
                         kind=ev["kind"],
                         finding_id=f.id,
                     )
-                print(f"  [tick {tick}] INJECT   {ev['author']}:{ev['kind']}")
+                wall_elapsed = time.time() - loop_started
+                print(
+                    f"  [tick {tick}] INJECT   {ev['author']}:{ev['kind']}  "
+                    f"overall: cost ${total_cost:.3f} time: {wall_elapsed:.1f}s"
+                )
                 print(f"              {preview}")
 
             # 2. Alignment cycle every N GF cycles.
@@ -246,7 +252,11 @@ def run_combined_loop(
 
                 if alignment_result.outcome == "error":
                     err = alignment_result.error or "unknown"
-                    print(f"  [tick {tick}] ALIGN    ERROR: {err}")
+                    wall_elapsed = time.time() - loop_started
+                    print(
+                        f"  [tick {tick}] ALIGN    ERROR: {err}  "
+                        f"overall: cost ${total_cost:.3f} time: {wall_elapsed:.1f}s"
+                    )
                     log("alignment", "error", err, alignment_result.cost_usd)
                     ev_write(
                         {
@@ -281,9 +291,12 @@ def run_combined_loop(
                             f"  [tick {tick}] ALIGN    edit {idx}/{len(align_findings)}  "
                             f"{f.kind.value:<32}  {preview}"
                         )
+                    wall_elapsed = time.time() - loop_started
                     print(
                         f"  [tick {tick}] ALIGN    batch of {len(align_findings)}  "
-                        f"${alignment_result.cost_usd:.3f}  {dt:.1f}s"
+                        f"This run: cost: ${alignment_result.cost_usd:.3f} "
+                        f"time: {dt:.1f}s, "
+                        f"overall: cost ${total_cost:.3f} time: {wall_elapsed:.1f}s"
                     )
 
             # 3. Gap Finding cycle.
@@ -315,7 +328,11 @@ def run_combined_loop(
                         "cost_usd": gf_result.cost_usd,
                     }
                 )
-                print(f"  [tick {tick}] GF#{gf_count:<2} ERROR: {err}")
+                wall_elapsed = time.time() - loop_started
+                print(
+                    f"  [tick {tick}] GF#{gf_count:<2} ERROR: {err}  "
+                    f"overall: cost ${total_cost:.3f} time: {wall_elapsed:.1f}s"
+                )
                 consecutive_gf_errors += 1
                 if consecutive_gf_errors >= MAX_CONSECUTIVE_GF_ERRORS:
                     stop_reason = (
@@ -352,10 +369,13 @@ def run_combined_loop(
                     f"  [tick {tick}] GF#{gf_count:<2} edit {idx}/{len(gf_findings)}  "
                     f"{f.kind.value:<14} {preview}"
                 )
+            wall_elapsed = time.time() - loop_started
             print(
-                f"  [tick {tick}] GF#{gf_count:<2} batch of {len(gf_findings)}  "
+                f"  [tick {tick}] GF#{gf_count} batch of {len(gf_findings)}  "
                 f"leaves {leaves_before}→{len(store.leaves())}  "
-                f"${gf_result.cost_usd:.3f}  {dt:.1f}s"
+                f"This run: cost: ${gf_result.cost_usd:.3f} "
+                f"time: {dt:.1f}s, "
+                f"overall: cost ${total_cost:.3f} time: {wall_elapsed:.1f}s"
             )
 
             # Track noops only if the entire batch was noop (or empty).
@@ -378,7 +398,11 @@ def run_combined_loop(
             if worker_every > 0 and gf_count % worker_every == 0:
                 target = _pick_worker_target(store, attempted_gap_ids)
                 if target is None:
-                    print(f"  [tick {tick}] WORKER   (no unattempted active leaf; skipping)")
+                    wall_elapsed = time.time() - loop_started
+                    print(
+                        f"  [tick {tick}] WORKER   (no unattempted active leaf; skipping)  "
+                        f"overall: cost ${total_cost:.3f} time: {wall_elapsed:.1f}s"
+                    )
                 else:
                     tick += 1
                     worker_count += 1
@@ -407,7 +431,11 @@ def run_combined_loop(
                                 "latency_s": round(dt, 2),
                             }
                         )
-                        print(f"  [tick {tick}] WORKER   ERROR on {target.id[:8]}: {err_msg}")
+                        wall_elapsed = time.time() - loop_started
+                        print(
+                            f"  [tick {tick}] WORKER   ERROR on {target.id[:8]}: {err_msg}  "
+                            f"overall: cost ${total_cost:.3f} time: {wall_elapsed:.1f}s"
+                        )
                         stop_reason = f"worker error: {err_msg}"
                         break
                     dt = time.time() - t0
@@ -431,10 +459,13 @@ def run_combined_loop(
                             "latency_s": round(dt, 2),
                         }
                     )
+                    wall_elapsed = time.time() - loop_started
                     print(
                         f"  [tick {tick}] WORKER   {w.outcome:<12} {target.id[:8]}  "
                         f"turns={w.turns_used}/{worker_max_turns}  "
-                        f"${w.cost_usd:.3f}  {dt:.1f}s"
+                        f"This run: cost: ${w.cost_usd:.3f} "
+                        f"time: {dt:.1f}s, "
+                        f"overall: cost ${total_cost:.3f} time: {wall_elapsed:.1f}s"
                     )
                     print(f"              {target.intent[:80]}")
                     if w.error:
@@ -487,9 +518,12 @@ def run_combined_loop(
                         f"{f.kind.value:<32} (final)  {preview}"
                     )
                 if final_findings:
+                    wall_elapsed = time.time() - loop_started
                     print(
                         f"  [tick {tick}] ALIGN    batch of {len(final_findings)} (final)  "
-                        f"${final_result.cost_usd:.3f}  {dt:.1f}s"
+                        f"This run: cost: ${final_result.cost_usd:.3f} "
+                        f"time: {dt:.1f}s, "
+                        f"overall: cost ${total_cost:.3f} time: {wall_elapsed:.1f}s"
                     )
     finally:
         if events_log is not None:

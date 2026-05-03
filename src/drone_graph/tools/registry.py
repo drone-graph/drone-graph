@@ -21,7 +21,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from drone_graph.tools.records import Tool, ToolKind
+from drone_graph.tools.records import Tool, ToolKind, TrustTier
 
 
 @dataclass
@@ -47,6 +47,8 @@ class ToolResult:
     content: str
     terminal_finding: Any = None  # Finding | None
     outcome: str | None = None  # "fill" | "fail" | None
+    extra_findings_written: int = 0
+    """Findings appended inside the dispatcher (e.g. skill_invocation)."""
 
 
 @dataclass
@@ -135,4 +137,5 @@ def builtin_to_record(name: str) -> Tool | None:
         description=t.description,
         input_schema_json=json.dumps(t.input_schema),
         kind=ToolKind.builtin,
+        trust_tier=TrustTier.high,
     )

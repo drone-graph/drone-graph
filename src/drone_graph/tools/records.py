@@ -25,6 +25,20 @@ class ToolKind(StrEnum):
     installed in their shell)."""
 
 
+class TrustTier(StrEnum):
+    """How much the substrate trusts a tool for automatic / implicit activation.
+
+    Builtins are treated as **high** at runtime regardless of graph mirror.
+    Installed tools default to **standard** unless alignment or registration
+    sets otherwise.
+    """
+
+    high = "high"
+    standard = "standard"
+    low = "low"
+    blocked = "blocked"
+
+
 def _now() -> datetime:
     return datetime.now(UTC)
 
@@ -56,6 +70,23 @@ class Tool(BaseModel):
     flagged_by_alignment: bool = False
     """Set by alignment when the registration looks suspicious. Drones can
     still see the tool but should treat it with extra scrutiny."""
+    skill_package_path: str | None = None
+    """Resolved filesystem directory containing ``SKILL.md``, if linked."""
+    skill_package_id: str | None = None
+    """Logical skill package id (folder name / metadata); optional when linked."""
+    needs_venv: bool = False
+    """When True, ``terminal_run`` sources ``DRONE_GRAPH_WORKSPACE/.venv`` before
+    the command when ``invocation_tool_name`` matches this tool."""
+    last_used_at: datetime = Field(default_factory=_now)
+    """Updated when any gap successfully invokes this tool (see ``record_usage``)."""
+    deprecated_at: datetime | None = None
+    """When set, default discovery (``cm_list_tools`` / ``cm_search_tools``) hides
+    installed tools unless ``include_deprecated``."""
+    deprecated_reason: str | None = None
+    """Why the tool was soft-deprecated (e.g. ``stale``, ``alignment_flag``)."""
+    trust_tier: TrustTier = TrustTier.standard
+    """Trust level for ``cm_request_tool`` gating and high-tier autoload from
+    ``gap.tool_suggestions``."""
 
 
 def empty_input_schema() -> dict[str, Any]:

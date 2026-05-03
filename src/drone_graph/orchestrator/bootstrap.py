@@ -114,7 +114,7 @@ GAP_FINDING_LOADOUT = [
     "rewrite_intent",
     "noop",
 ]
-ALIGNMENT_LOADOUT = ["write_alignment_finding"]
+ALIGNMENT_LOADOUT = ["write_alignment_finding", "cm_deprecate_stale_tools"]
 
 # Preload queries the runtime runs at dispatch and injects into the drone's
 # initial context. Each name maps to a function in

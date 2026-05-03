@@ -47,6 +47,8 @@ from drone_graph.tools import (
     to_anthropic_tool_def,
     universal_query_tool_names,
 )
+from drone_graph.tools.records import TrustTier
+from drone_graph.tools.trust import effective_trust
 
 DEFAULT_MAX_TURNS = 20
 DEFAULT_COMMAND_TIMEOUT_S = 60.0
@@ -299,6 +301,13 @@ def run_drone(
         heartbeat.start()
 
     active = set(_resolve_loadout(gap))
+    for raw in gap.tool_suggestions or []:
+        name = str(raw).strip()
+        if not name or name in active:
+            continue
+        tier = effective_trust(name, tool_store)
+        if tier is TrustTier.high:
+            active.add(name)
     suggested = set(gap.tool_suggestions or [])
 
     needs_terminal = any(name in _TERMINAL_TOOLS for name in active)
@@ -556,6 +565,7 @@ def _dispatch_one(call: ToolCall, state: _RuntimeState) -> str:
         state.findings_written += 1
     elif _emits_finding(call.name):
         state.findings_written += 1
+    state.findings_written += result.extra_findings_written
     # Record tool usage on the gap (best-effort; ignore errors).
     try:
         ctx.tool_store.record_usage(call.name, ctx.gap_id)

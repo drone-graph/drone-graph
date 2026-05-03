@@ -1,0 +1,7 @@
+{
+    "description": "Phase 4 demo: Series-A SaaS content marketing root; workers may use terminal_run, pip, cm_register_tool on emergent leaves.",
+    "root": "03-saas-content-marketing",
+    "alignment_every_n_gf": 3,
+    "max_gf_invocations": 14,
+    "events": []
+  }
