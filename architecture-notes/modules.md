@@ -13,10 +13,15 @@ nothing internal; higher-level modules import down the stack, not across.
 - `terminal/` imports nothing internal.
 - `prompts/` is text + a loader; imports nothing internal.
 - `tools/records` imports nothing internal.
-- `tools/store` may import `substrate` only.
-- `tools/registry` and `tools/builtins/*` may import `gaps`, `terminal`,
-  `tools.records`, `tools.store` — the builtin dispatchers run against the
-  drone's runtime context, which is provided to them by `drones/runtime`.
+- `tools/store` may import `substrate` and `embeddings` (optional SQLite
+  embedding sidecar via `ToolStore`).
+- `tools/trust` imports `tools.store` and `tools.registry` only
+  (`effective_trust` helper).
+- `tools/registry` and `tools/builtins/*` may import `gaps`,
+  `skills_marketplace.skill_packages`, `terminal`, `tools.records`,
+  `tools.store` — the builtin dispatchers run
+  against the drone's runtime context, which is provided to them by
+  `drones/runtime`.
 - `skills_marketplace/` does not import other `drone_graph.*` packages
   (only third-party libs and sibling files).
 - `model_registry/` may import `gaps` (for `ModelTier`), `drones.providers`
@@ -26,7 +31,9 @@ nothing internal; higher-level modules import down the stack, not across.
   It does **not** yet import `model_registry`. (`drones.runtime` lazily
   imports `orchestrator.preload` to render preset gap context — that's the
   one cross-import allowed, deliberately deferred.)
-- `orchestrator/` may import `substrate`, `gaps`, `tools`, `drones`.
+- `orchestrator/` may import `substrate`, `gaps`, `tools`, `drones`,
+  `skills_marketplace.skill_packages` (`preload.render_preloads` loads
+  `SKILL.md` packages).
 - `cli.py` may import anything.
 
 If you're about to import across a sibling (e.g., `terminal` reaching into
@@ -94,34 +101,89 @@ builtin Python callables or installed shell-runnable documentation.
 
 **Interface.**
 - `records.py`: `Tool` (Pydantic), `ToolKind` (`builtin | installed`),
-  `empty_input_schema`.
-- `store.py`: `ToolStore(substrate)` — `get`, `all_tools`, `search`,
-  `depends_on`, `upsert_builtin` (idempotent, used by init), `register_installed`
-  (drone-driven), `record_usage` (`USED_BY` edge), `flag` (alignment
-  marking).
+  **`TrustTier`** (`high | standard | low | blocked`), **`trust_tier`** on each
+  tool (installed defaults **standard**; mirrored builtins **high**),
+  `empty_input_schema`. Optional `skill_package_path` /
+  `skill_package_id` link an installed tool to a directory containing
+  `SKILL.md` (operator-supplied paths are a trust boundary). Optional
+  `needs_venv`: when set on an installed tool, `terminal_run` with matching
+  `invocation_tool_name` sources `DRONE_GRAPH_WORKSPACE/.venv` before `cmd`.
+  **`last_used_at`** bumps on `record_usage`; **`deprecated_at` /
+  `deprecated_reason`** soft-hide installed tools from default discovery.
+- `store.py`: `ToolStore(substrate, embedding_store=..., embedder=...)` —
+  `get`, `all_tools`, `search`, `depends_on`, `upsert_builtin` (idempotent,
+  used by init; persists **`trust_tier`** on builtins and installed tools),
+  `register_installed` (drone-driven), `record_usage`
+  (`USED_BY` edge + updates `last_used_at`, clears deprecation on reuse),
+  `flag` (alignment marking), **`deprecate_stale_installed_tools`** (soft-deprecate
+  stale or flagged **installed** tools; deletes description embeddings when the
+  sidecar is configured); **`is_discoverable`** helper for listing; optional
+  embedding backfill; `semantic_search_configured` /
+  `semantic_rank_tool_names` when embeddings are wired (delegates to
+  `rank_tools_by_query`).
 - `registry.py`: `BuiltinTool`, `ToolResult`, `DroneContext` (mutable
   per-drone state shared with dispatchers), `register_tool` decorator,
   `get_builtin`, `list_builtins`, `universal_query_tool_names`,
   `to_anthropic_tool_def`, `builtin_to_record`.
+- `trust.py`: `effective_trust(name, tool_store)` — builtins **high**; else
+  graph record's **`trust_tier`**; unknown **None**.
 - `builtins/` — packages of `@register_tool` definitions:
   - `queries.py` — universal cm_* read tools (`cm_get_gap`, `cm_list_gaps`,
     `cm_children_of`, `cm_parent_of`, `cm_leaves`, `cm_findings`,
-    `cm_finding`, `cm_list_tools`, `cm_get_tool`).
+    `cm_finding`, `cm_list_tools` (optional `include_deprecated`; hides soft-deprecated
+    installed tools by default), `cm_search_tools` (same filter when hydrating hits),
+    `cm_get_tool` (full record including deprecation fields).
+  - `registry_admin.py` — `cm_deprecate_stale_tools` (Alignment preset loadout +
+    `drone-graph tools deprecate-stale`; stale / flagged installed tools only).
   - `structural.py` — Gap Finding's verbs (`decompose`, `create`, `retire`,
     `reopen`, `rewrite_intent`, `noop`).
   - `alignment.py` — `write_alignment_finding`.
-  - `worker.py` — emergent default loadout (`terminal_run`, `cm_read_gap`,
-    `cm_write_finding`, `cm_register_tool`, `cm_request_tool`).
+  - `worker.py` — emergent default loadout (`terminal_run` wraps
+    `source …/activate && cmd` when the invoked installed tool has `needs_venv`
+    and `DRONE_GRAPH_WORKSPACE` resolves to a `.venv`; no auto-create or pruning),
+    `cm_read_gap`, `cm_write_finding`, `cm_register_tool` (optional
+    `skill_package_path` / `skill_package_id`, `needs_venv`, **`trust_tier`**;
+    validated with `load_skill_package`), **`cm_request_tool`** (**blocked**
+    never activates; **low** only when the gap's **`tool_suggestions`** lists
+    the name)).
 - `mirror_builtins_to_graph(tool_store)` — called at substrate init to sync
   the Python registry into the graph.
 
 **Grows into.** Truly callable installed tools (today they're documentation
-+ `terminal_run`) · skill packages (Phase 4) · vector search over tool
-descriptions · stale-tool pruning · finer trust tiers beyond a single
-`flagged_by_alignment` boolean.
++ `terminal_run`) · skill packages (Phase 4).
 
 **Depends on.** `substrate` (store) · `gaps`, `terminal` (builtin
 dispatchers).
+
+---
+
+## `embeddings/`
+
+**Purpose.** Sidecar **SQLite** storage for dense vectors keyed by
+`(tool_name, scope, model_id)` — derived data from `:Tool` metadata, not
+authoritative over Neo4j.
+
+**Interface.**
+- `SQLiteEmbeddingStore(path)` — WAL file (pattern matches `signals/sqlite`);
+  `upsert`, `get`, `delete`, `list_by_scope`.
+- `Embedder` protocol (`model_id`, `embed(text)`).
+- `maybe_index_tool_description` — best-effort backfill from `Tool.name` +
+  `Tool.description` (`scope=description`).
+- `rank_tools_by_query(query, store=..., embedder=...)` — embeds the query,
+  cosine-similarity rank of `tool_name` ids vs stored vectors (same `model_id`);
+  optional `limit`. Drones call this indirectly via universal builtin
+  `cm_search_tools` when the runtime `ToolStore` has `embedding_store` and
+  `embedder` configured.
+- `ToolStore(..., embedding_store=..., embedder=...)` triggers indexing after
+  `upsert_builtin` / `register_installed` when both are set; embedding
+  failures never block graph writes. Soft deprecation removes matching
+  description rows via `SQLiteEmbeddingStore.delete` so `cm_search_tools`
+  does not rank deprecated installed tools.
+
+**Grows into.** Skill-body scopes (`skill:*`) · real provider embedders · ANN
+index (currently full scan + cosine in Python).
+
+**Depends on.** `tools.records` only (`backfill`); no `substrate`.
 
 ---
 
@@ -130,7 +192,9 @@ dispatchers).
 **Purpose.** The unified drone runtime: one `run_drone(gap)` entry point
 for every gap, preset or emergent. Loads `hivemind.md` as system prompt,
 computes the active tool surface from the gap's `tool_loadout` plus
-universal queries, runs a multi-turn message loop, terminates on a fill /
+universal queries, **merges high-trust names from `gap.tool_suggestions`**
+(see `tools.trust.effective_trust`) so suggested builtins need not call
+`cm_request_tool`, then runs a multi-turn message loop, terminates on a fill /
 fail or max turns.
 
 **Interface.**
@@ -172,6 +236,9 @@ drone.
 - `TerminalTimeout`, `TerminalDead` — failure modes
 - `resolve_bash_executable()`, `is_terminal_supported()` — Windows /
   Git-Bash aware discovery
+- `workspace_venv.py` — `WORKSPACE_ENV` (`DRONE_GRAPH_WORKSPACE`),
+  `resolve_venv_activate_script()` → `{workspace}/.venv` (`bin/activate` or
+  `Scripts/activate`); operator-managed disk layout only.
 
 **Grows into.** Registration of detached processes in the collective mind
 (Phase 3) · port / resource reservation · cwd / env snapshot.
@@ -191,15 +258,17 @@ client errors.
 **Interface.**
 - `bootstrap.init_collective_mind(substrate) -> (GapStore, ToolStore)` —
   schema + builtins mirrored to graph + preset gaps minted. Idempotent.
-  Constants: `PRESET_GAP_FINDING`, `PRESET_ALIGNMENT`.
+  Constants: `PRESET_GAP_FINDING`, `PRESET_ALIGNMENT`. Alignment preset
+  `tool_loadout` includes `write_alignment_finding` and
+  `cm_deprecate_stale_tools`.
 - `loop.run_combined_loop(*, substrate, client, scenario_name=None,
   out_dir=None, tape=None, target_leaves, align_every, max_gf,
   worker_every, worker_max_turns, preset_max_turns, reset=None)` — main
   entry. Writes `events.jsonl`, `tape.jsonl`, `timeline.md`, `tree.md`,
   `summary.md` under `out_dir`.
 - `preload.PRELOADERS`, `preload.render_preloads` — context preloaders
-  (`recent_findings`, `leaves`, `tree_shape`) used by preset gaps'
-  `context_preload`.
+  (`recent_findings`, `leaves`, `tree_shape`) plus `skill_package:<path>`
+  (on-disk `SKILL.md` packages) merged into gaps' `context_preload`.
 - `scenarios.{available_roots,available_scenarios,inject_event,
   load_root_seed,load_scenario}` — root + scheduled-event loaders.
 - `tape.EventTape`, `tape.default_tape_path` — JSONL drone-lifecycle log.
@@ -264,12 +333,14 @@ skills.
 
 ## `skills_marketplace/`
 
-**Purpose.** Pre-tools-registry installable-style tools (Crawl4AI fetchers)
-used today by `model_registry.doc_enrich`. Predates the graph-backed
-`tools/` module and remains until a real marketplace + skill loader replaces
-it.
+**Purpose.** Marketplace-adjacent helpers: **on-disk skill packages**
+(`skill_packages/` — `SKILL.md` + optional `metadata.json`, loaded by preload
+and `cm_register_tool`), plus pre-tools-registry installable-style tools
+(Crawl4AI fetchers) used today by `model_registry.doc_enrich`.
 
 **Interface.**
+- `skills_marketplace.skill_packages` — `load_skill_package`, path resolution
+  (`DRONE_GRAPH_SKILL_ROOT`), `ParsedSkillPackage`, `SkillPackageError`
 - `skills_marketplace.tool.openai_docs_crawl` — `get_model_card`,
   `get_pricing_page`, `get_deprecations_page`, `get_simple_websearch`
   (allowlisted hosts; SSRF-safe)
@@ -277,10 +348,11 @@ it.
   `fetch_allowed_page_markdown` for `developers.openai.com` only
 - `skills_marketplace.skills` — placeholder package for future skills
 
-**Grows into.** Folded into `tools/` once a real marketplace + skill loader
-lands.
+**Grows into.** Deeper marketplace integration with `tools/` and vector
+search.
 
-**Depends on.** Nothing under other `drone_graph.*` top-level packages.
+**Depends on.** Subpackages use only third-party libs and each other;
+`skill_packages` records use Pydantic only (no `substrate` / `gaps` / `tools`).
 
 ---
 

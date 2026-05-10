@@ -1,0 +1,6 @@
+{
+  "title": "Full Metadata Skill",
+  "triggers": ["run demo", "demo task"],
+  "version": "1.0.0",
+  "description": "A fixture with full metadata."
+}

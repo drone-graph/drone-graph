@@ -101,6 +101,45 @@ python -m drone_graph.orchestrator.loop \
   --out var/runs/coffee-demo-gpt4o
 ```
 
+### Concurrent scheduler (Phase 3 — parallel workers)
+
+The commands above use **`orchestrator.loop`**: one in-process drone at a time.
+To run **several worker drones in parallel** (subprocesses + SQLite sidecar
+`var/signals.db` for claims, file/install coordination, and cost ceiling), use
+**`python -m drone_graph.orchestrator.scheduler`**. See
+[`ROADMAP.md`](ROADMAP.md) (Phase 3) and
+[`architecture-notes/phase-3-plan.md`](architecture-notes/phase-3-plan.md) for
+details. **`drone-graph reset-signals`** clears the sidecar between experiments.
+
+**Anthropic (Claude)** — `parallel-stress` scenario (contention + cancellation):
+
+```sh
+python -m drone_graph.orchestrator.scheduler \
+  --scenario parallel-stress \
+  --provider anthropic \
+  --model claude-haiku-4-5-20251001 \
+  --max-workers 4 \
+  --max-cost-usd 1.00 \
+  --reset-signals \
+  --out var/runs/parallel-stress-haiku
+```
+
+**OpenAI (GPT):**
+
+```sh
+python -m drone_graph.orchestrator.scheduler \
+  --scenario parallel-stress \
+  --provider openai \
+  --model gpt-4o \
+  --max-workers 4 \
+  --max-cost-usd 1.00 \
+  --reset-signals \
+  --out var/runs/parallel-stress-gpt4o
+```
+
+Scheduler runs also write **`scheduler-tape.jsonl`** and per-drone tapes under
+`var/tapes/<run_id>/` (see the Phase 3 docs).
+
 Per-run artefacts land under `var/runs/<scenario>-<ts>/`: `events.jsonl`,
 `tape.jsonl`, `timeline.md`, `tree.md`, `summary.md`. Inspect the substrate
 mid-run from another shell:

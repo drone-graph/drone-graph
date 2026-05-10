@@ -9,7 +9,9 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from drone_graph.tools.records import TrustTier
 from drone_graph.tools.registry import DroneContext, ToolResult, register_tool
+from drone_graph.tools.store import is_discoverable
 
 
 def _serialize_gap(g: Any) -> dict[str, Any]:
@@ -29,7 +31,7 @@ def _serialize_gap(g: Any) -> dict[str, Any]:
 
 
 def _serialize_finding(f: Any) -> dict[str, Any]:
-    return {
+    out: dict[str, Any] = {
         "id": f.id,
         "tick": f.tick,
         "author": f.author.value,
@@ -39,17 +41,46 @@ def _serialize_finding(f: Any) -> dict[str, Any]:
         "artefact_paths": list(f.artefact_paths),
         "created_at": f.created_at.isoformat(),
     }
+    if f.invocation_tool_name is not None:
+        out["invocation_tool_name"] = f.invocation_tool_name
+    if f.invocation_outcome is not None:
+        out["invocation_outcome"] = f.invocation_outcome
+    if f.invocation_provider is not None:
+        out["invocation_provider"] = f.invocation_provider
+    if f.invocation_model is not None:
+        out["invocation_model"] = f.invocation_model
+    if f.invocation_cost_usd is not None:
+        out["invocation_cost_usd"] = f.invocation_cost_usd
+    if f.invocation_metrics_json is not None:
+        out["invocation_metrics_json"] = f.invocation_metrics_json
+    return out
 
 
 def _serialize_tool(t: Any) -> dict[str, Any]:
-    return {
+    lu = getattr(t, "last_used_at", None)
+    da = getattr(t, "deprecated_at", None)
+    out: dict[str, Any] = {
         "name": t.name,
         "description": t.description,
         "kind": t.kind.value,
         "usage": t.usage,
         "depends_on": list(t.depends_on),
         "flagged_by_alignment": t.flagged_by_alignment,
+        "needs_venv": getattr(t, "needs_venv", False),
+        "last_used_at": lu.isoformat() if lu is not None else None,
+        "deprecated_at": da.isoformat() if da is not None else None,
+        "deprecated_reason": getattr(t, "deprecated_reason", None),
+        "trust_tier": (
+            tt.value
+            if (tt := getattr(t, "trust_tier", None)) is not None
+            else TrustTier.standard.value
+        ),
     }
+    if t.skill_package_path is not None:
+        out["skill_package_path"] = t.skill_package_path
+    if t.skill_package_id is not None:
+        out["skill_package_id"] = t.skill_package_id
+    return out
 
 
 @register_tool(
@@ -164,7 +195,12 @@ def cm_leaves(args: dict[str, Any], ctx: DroneContext) -> ToolResult:
 
 @register_tool(
     "cm_findings",
-    "Recent findings, oldest first, optionally filtered. Use this to see what other drones (workers, alignment, GF, system rollups) have written.",
+    (
+        "Recent findings, oldest first within the returned window (substrate order "
+        "is tick asc). Optionally filter by author, kind, gap_id, or skill "
+        "invocation fields (invocation_tool_name, invocation_outcome). Typical "
+        "skill query: kind=skill_invocation plus invocation_tool_name."
+    ),
     {
         "type": "object",
         "properties": {
@@ -178,6 +214,19 @@ def cm_leaves(args: dict[str, Any], ctx: DroneContext) -> ToolResult:
                 "type": "string",
                 "description": "Only findings whose affected_gap_ids include this gap.",
             },
+            "invocation_tool_name": {
+                "type": "string",
+                "description": (
+                    "Exact match on Finding.invocation_tool_name "
+                    "(skill_invocation rows)."
+                ),
+            },
+            "invocation_outcome": {
+                "type": "string",
+                "description": (
+                    "Exact match on Finding.invocation_outcome (e.g. success, failure)."
+                ),
+            },
         },
     },
     universal_query=True,
@@ -187,6 +236,14 @@ def cm_findings(args: dict[str, Any], ctx: DroneContext) -> ToolResult:
     author = args.get("author")
     kind = args.get("kind")
     gap_id = args.get("gap_id")
+    raw_inv_tool = args.get("invocation_tool_name")
+    invocation_tool_name = (
+        str(raw_inv_tool).strip() if raw_inv_tool not in (None, "") else ""
+    )
+    raw_inv_out = args.get("invocation_outcome")
+    invocation_outcome = (
+        str(raw_inv_out).strip() if raw_inv_out not in (None, "") else ""
+    )
     findings = ctx.store.all_findings()
     if author:
         findings = [f for f in findings if f.author.value == author]
@@ -194,6 +251,14 @@ def cm_findings(args: dict[str, Any], ctx: DroneContext) -> ToolResult:
         findings = [f for f in findings if f.kind.value == kind]
     if gap_id:
         findings = [f for f in findings if gap_id in f.affected_gap_ids]
+    if invocation_tool_name:
+        findings = [
+            f for f in findings if f.invocation_tool_name == invocation_tool_name
+        ]
+    if invocation_outcome:
+        findings = [
+            f for f in findings if f.invocation_outcome == invocation_outcome
+        ]
     if limit > 0:
         findings = findings[-limit:]
     return ToolResult(content=json.dumps([_serialize_finding(f) for f in findings]))
@@ -231,14 +296,76 @@ def cm_finding(args: dict[str, Any], ctx: DroneContext) -> ToolResult:
                 "type": "string",
                 "description": "Optional substring to filter on; empty returns the full registry.",
             },
+            "include_deprecated": {
+                "type": "boolean",
+                "description": (
+                    "If true, include soft-deprecated installed tools. Default false."
+                ),
+            },
         },
     },
     universal_query=True,
 )
 def cm_list_tools(args: dict[str, Any], ctx: DroneContext) -> ToolResult:
     q = str(args.get("query", "") or "")
+    raw_inc = args.get("include_deprecated")
+    include_deprecated = raw_inc if isinstance(raw_inc, bool) else False
     tools = ctx.tool_store.search(q) if q else ctx.tool_store.all_tools()
+    if not include_deprecated:
+        tools = [t for t in tools if is_discoverable(t)]
     return ToolResult(content=json.dumps([_serialize_tool(t) for t in tools]))
+
+
+@register_tool(
+    "cm_search_tools",
+    (
+        "Natural-language search over tool descriptions using embedding similarity "
+        "(see ToolStore embedding sidecar). For substring filtering use cm_list_tools. "
+        "Returns ranked tool names and serialized tool metadata."
+    ),
+    {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "What you are looking for in natural language.",
+            },
+            "limit": {
+                "type": "integer",
+                "description": "Max tools to return (default 20).",
+            },
+        },
+        "required": ["query"],
+    },
+    universal_query=True,
+)
+def cm_search_tools(args: dict[str, Any], ctx: DroneContext) -> ToolResult:
+    if not ctx.tool_store.semantic_search_configured:
+        return ToolResult(
+            content=(
+                "Semantic tool search is not configured for this run (embeddings "
+                "store + embedder on ToolStore). Use cm_list_tools for substring search."
+            )
+        )
+    q = str(args.get("query", "")).strip()
+    if not q:
+        return ToolResult(content="ERROR: query required for cm_search_tools")
+    raw_limit = args.get("limit")
+    limit = int(raw_limit) if raw_limit is not None else 20
+    names = ctx.tool_store.semantic_rank_tool_names(q, limit=limit)
+    tools_out: list[dict[str, Any]] = []
+    filtered_names: list[str] = []
+    for name in names:
+        t = ctx.tool_store.get(name)
+        if t is None:
+            continue
+        if not is_discoverable(t):
+            continue
+        filtered_names.append(name)
+        tools_out.append(_serialize_tool(t))
+    return ToolResult(
+        content=json.dumps({"ranked_names": filtered_names, "tools": tools_out})
+    )
 
 
 @register_tool(

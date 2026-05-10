@@ -8,8 +8,16 @@ from drone_graph.tools.builtins import (
     alignment,
     concurrency,
     queries,
+    registry_admin,
     structural,
     worker,
 )
 
-__all__ = ["alignment", "concurrency", "queries", "structural", "worker"]
+__all__ = [
+    "alignment",
+    "concurrency",
+    "queries",
+    "registry_admin",
+    "structural",
+    "worker",
+]

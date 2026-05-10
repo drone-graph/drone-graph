@@ -114,7 +114,7 @@ GAP_FINDING_LOADOUT = [
     "rewrite_intent",
     "noop",
 ]
-ALIGNMENT_LOADOUT = ["write_alignment_finding"]
+ALIGNMENT_LOADOUT = ["write_alignment_finding", "cm_deprecate_stale_tools"]
 
 # Preload queries the runtime runs at dispatch and injects into the drone's
 # initial context. Each name maps to a function in
@@ -122,18 +122,33 @@ ALIGNMENT_LOADOUT = ["write_alignment_finding"]
 PRESET_PRELOAD = ["recent_findings", "leaves", "tree_shape"]
 
 
-def init_collective_mind(substrate: Substrate) -> tuple[GapStore, ToolStore]:
+def init_collective_mind(
+    substrate: Substrate, *, target_leaves: int | None = None
+) -> tuple[GapStore, ToolStore]:
     """One-shot init: schema, builtin tools mirrored to graph, preset gaps minted.
 
     Idempotent. Returns the store handles so callers don't have to re-instantiate.
+
+    ``target_leaves`` is the leaf-buffer target Gap Finding should aim for. When
+    set, the GF preset gap's intent is rendered with that concrete number so
+    every drone dispatched against it sees a quantitative anchor (regardless
+    of dispatch site — loop, scheduler subprocess, or future caller).
     """
     substrate.init_schema()
     gap_store = GapStore(substrate)
     tool_store = ToolStore(substrate)
     mirror_builtins_to_graph(tool_store)
+    if target_leaves is None:
+        gf_target_line = ""
+    else:
+        gf_target_line = (
+            f"\nTarget leaf-buffer size for this run: {target_leaves}. "
+            f"Use the leaves preload to count current leaves and decompose "
+            f"when the count is below target.\n"
+        )
     gap_store.upsert_preset(
         preset_kind=PRESET_GAP_FINDING,
-        intent=GAP_FINDING_INTENT,
+        intent=GAP_FINDING_INTENT + gf_target_line,
         criteria=GAP_FINDING_CRITERIA,
         tool_loadout=GAP_FINDING_LOADOUT,
         context_preload=PRESET_PRELOAD,

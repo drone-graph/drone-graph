@@ -55,6 +55,8 @@ class FindingKind(StrEnum):
     user_input = "user_input"
     # Freeform drone note that does not close or abandon a gap.
     note = "note"
+    # Record of a tool/skill invocation (Phase 4); see Finding invocation_* fields.
+    skill_invocation = "skill_invocation"
 
 
 def _now() -> datetime:
@@ -83,9 +85,11 @@ class Gap(BaseModel):
     """Tools recommended by Gap Finding but not preloaded; the drone can ask
     for them via cm_request_tool(name) during the run."""
     context_preload: list[str] = Field(default_factory=list)
-    """Names of preload queries to run at dispatch and inject into the drone's
-    initial context (e.g. ``recent_findings``, ``leaves``, ``tree_shape``).
-    Used by preset gaps to avoid a wasted "obvious query" turn at the start."""
+    """Preload entries run at dispatch and injected into the drone's initial
+    user message. Known substrate preloaders: ``recent_findings``, ``leaves``,
+    ``tree_shape``. Skill packages: ``skill_package:<path>`` (directory with
+    ``SKILL.md``). Relative paths resolve under ``DRONE_GRAPH_SKILL_ROOT`` if
+    set, else under the process current working directory."""
     # If this gap is a preset (Gap Finding, Alignment, etc.), this is its
     # stable preset id; ``None`` for emergent gaps. Preset gaps are minted at
     # substrate init and are never closed or retired by the loop.
@@ -106,3 +110,16 @@ class Finding(BaseModel):
     # other drones and tooling can retrieve it directly.
     artefact_paths: list[str] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=_now)
+    # --- skill_invocation (kind == skill_invocation); None for all other kinds.
+    invocation_tool_name: str | None = None
+    """Stable tool key; matches :Tool.name when the tool exists in the graph."""
+    invocation_outcome: str | None = None
+    """e.g. success, failure, partial."""
+    invocation_provider: str | None = None
+    """LLM vendor when tied to a model call (e.g. anthropic, openai)."""
+    invocation_model: str | None = None
+    """Vendor model id when applicable."""
+    invocation_cost_usd: float | None = None
+    """Approximate spend when derived from usage estimates."""
+    invocation_metrics_json: str | None = None
+    """Optional JSON object string: exit_code, duration_ms, tokens, etc."""

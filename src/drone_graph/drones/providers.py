@@ -139,13 +139,17 @@ class AnthropicClient:
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]],
     ) -> ChatResponse:
-        resp = self._client.messages.create(
-            model=self.model,
-            max_tokens=4096,
-            system=system,
-            messages=cast(Any, messages),
-            tools=cast(Any, tools),
-        )
+        kwargs: dict[str, Any] = {
+            "model": self.model,
+            "max_tokens": 4096,
+            "system": system,
+            "messages": cast(Any, messages),
+        }
+        if tools:
+            kwargs["tools"] = cast(Any, tools)
+            # Align with run_drone: every turn must invoke at least one tool.
+            kwargs["tool_choice"] = cast(Any, {"type": "any"})
+        resp = self._client.messages.create(**kwargs)
         text_parts: list[str] = []
         tool_calls: list[ToolCall] = []
         raw_content: list[dict[str, Any]] = []
@@ -285,14 +289,18 @@ class OpenAIClient:
         oai_messages: list[dict[str, Any]] = [{"role": "system", "content": system}]
         oai_messages.extend(drone_messages_to_openai_chat(messages))
         oai_tools = drone_tools_to_openai_functions(tools)
-        resp = self._client.chat.completions.create(
-            model=self.model,
-            messages=cast(Any, oai_messages),
-            tools=cast(Any, oai_tools),
-            tool_choice="auto",
-            parallel_tool_calls=True,
-            max_tokens=4096,
-        )
+        kwargs: dict[str, Any] = {
+            "model": self.model,
+            "messages": cast(Any, oai_messages),
+            "max_tokens": 4096,
+        }
+        if oai_tools:
+            kwargs["tools"] = cast(Any, oai_tools)
+            # run_drone rejects turns with no tool_calls; "auto" lets GPT answer
+            # with plain text only — use required when tools exist.
+            kwargs["tool_choice"] = "required"
+            kwargs["parallel_tool_calls"] = True
+        resp = self._client.chat.completions.create(**kwargs)
         choice = resp.choices[0]
         msg = choice.message
         text = msg.content or ""

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import sys
 from pathlib import Path
@@ -56,6 +57,12 @@ drone_app = typer.Typer(
     help="Run a worker drone against a single gap (experiment harness).",
 )
 app.add_typer(drone_app, name="drone")
+
+tools_cli = typer.Typer(
+    no_args_is_help=True,
+    help="Tool registry maintenance (soft deprecation, stale pruning).",
+)
+app.add_typer(tools_cli, name="tools")
 
 registry_app = typer.Typer(
     no_args_is_help=True,
@@ -417,6 +424,37 @@ def model_registry_sync(
         raise typer.Exit(code=1) from e
 
     typer.echo(f"synced {out} ({len(data.models)} models).")
+
+
+@tools_cli.command("deprecate-stale")
+def tools_deprecate_stale(
+    max_age_days: float = typer.Option(
+        90.0,
+        "--max-age-days",
+        help="Installed tools idle longer than this (by last_used_at) are stale.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="List candidates without writing deprecated_at.",
+    ),
+    deprecate_flagged: bool = typer.Option(
+        True,
+        "--flagged/--no-flagged",
+        help="Also deprecate alignment-flagged installed tools (default: on).",
+    ),
+) -> None:
+    """Soft-deprecate stale or flagged installed tools (same logic as cm_deprecate_stale_tools)."""
+    from drone_graph.tools import ToolStore
+
+    substrate = _bootstrap()
+    tool_store = ToolStore(substrate)
+    report = tool_store.deprecate_stale_installed_tools(
+        max_age_days=max_age_days,
+        deprecate_flagged=deprecate_flagged,
+        dry_run=dry_run,
+    )
+    typer.echo(json.dumps(report, indent=2, default=str))
 
 
 def main() -> None:
