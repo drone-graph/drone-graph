@@ -60,6 +60,7 @@ DEFAULT_ALIGNMENT_EVERY = 3
 DEFAULT_MAX_GF = 15
 DEFAULT_WORKER_MAX_TURNS = 20
 DEFAULT_PRESET_MAX_TURNS = 6
+DEFAULT_TARGET_LEAVES = 5
 HARDKILL_GRACE_S = 90.0       # 3.4 will use this for cancelled workers
 SOFTKILL_GRACE_S = 5.0
 NOOP_STREAK_TO_STOP = 3
@@ -565,6 +566,7 @@ def _build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--max-workers", type=int, default=DEFAULT_MAX_WORKERS)
     ap.add_argument("--max-gf", type=int, default=DEFAULT_MAX_GF)
     ap.add_argument("--align-every", type=int, default=DEFAULT_ALIGNMENT_EVERY)
+    ap.add_argument("--target-leaves", type=int, default=DEFAULT_TARGET_LEAVES)
     ap.add_argument("--tick-s", type=float, default=DEFAULT_TICK_S)
     ap.add_argument(
         "--worker-max-turns", type=int, default=DEFAULT_WORKER_MAX_TURNS
@@ -616,15 +618,21 @@ def main(argv: list[str] | None = None) -> None:
     substrate = _resolve_substrate()
     if args.reset_graph or args.scenario is not None:
         substrate.execute_write("MATCH (n) DETACH DELETE n")
-    store, _tool_store = init_collective_mind(substrate)
 
+    target_leaves = args.target_leaves
     pending_events: list[dict[str, Any]] = []
+    scenario_data: dict[str, Any] | None = None
     if args.scenario is not None:
-        scenario = load_scenario(args.scenario)
-        intent, criteria = load_root_seed(scenario["root"])
+        scenario_data = load_scenario(args.scenario)
+        target_leaves = int(scenario_data.get("target_leaves", target_leaves))
+
+    store, _tool_store = init_collective_mind(substrate, target_leaves=target_leaves)
+
+    if scenario_data is not None:
+        intent, criteria = load_root_seed(scenario_data["root"])
         store.create_root(intent=intent, criteria=criteria)
         pending_events = sorted(
-            scenario.get("events", []),
+            scenario_data.get("events", []),
             key=lambda e: e["at_gf_tick"],
         )
 

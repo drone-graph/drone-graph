@@ -134,7 +134,7 @@ def run_combined_loop(
         # Reset before init so preset gaps get re-minted fresh.
         substrate.execute_write("MATCH (n) DETACH DELETE n")
 
-    store, tool_store = init_collective_mind(substrate)
+    store, tool_store = init_collective_mind(substrate, target_leaves=target_leaves)
 
     if scenario is not None:
         intent, criteria = load_root_seed(scenario["root"])

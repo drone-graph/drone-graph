@@ -446,7 +446,7 @@ def cm_register_tool(args: dict[str, Any], ctx: DroneContext) -> ToolResult:
     if not isinstance(schema, dict):
         schema = {"type": "object", "properties": {}}
     trust_or_err = _parse_trust_tier_arg(args)
-    if isinstance(trust_or_err, str):
+    if not isinstance(trust_or_err, TrustTier):
         return ToolResult(content=f"ERROR: {trust_or_err}")
     link = _skill_link_from_register_args(args)
     if isinstance(link, str):
