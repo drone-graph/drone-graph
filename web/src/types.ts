@@ -30,6 +30,13 @@ export interface Gap {
   tool_suggestions: string[];
   context_preload: string[];
   preset_kind: string | null;
+  uses_operator_identity?: boolean;
+  identity_approved?: boolean;
+  identity_denied_reason?: string | null;
+  max_output_tokens?: number | null;
+  /** True when the operator paused this gap via "not right now" on an
+   *  inbox item. The scheduler skips paused gaps until /unpause is hit. */
+  paused?: boolean;
 }
 
 export interface Finding {
@@ -213,7 +220,20 @@ export interface InboxItem {
 }
 
 export interface InboxResolveRequest {
-  outcome: "resolved" | "declined" | "skipped";
+  /** Operator intent on inbox items.
+   *  resolved → drone proceed.
+   *  try_another_way → keep gap, GF decomposes around the rejected route.
+   *  dont_do_this → retire affected gap(s).
+   *  not_right_now → pause affected gap(s) (resumable later).
+   *  declined / skipped → legacy single-button deny, treated as try_another_way.
+   */
+  outcome:
+    | "resolved"
+    | "try_another_way"
+    | "dont_do_this"
+    | "not_right_now"
+    | "declined"
+    | "skipped";
   note?: string | null;
   external_id?: string | null;
 }

@@ -189,6 +189,25 @@ def grant_identity(gap_id: str, req: _IdentityGrantRequest) -> dict[str, Any]:
     return {"finding": _finding_to_dto(finding).model_dump()}
 
 
+@router.post("/gaps/{gap_id}/unpause")
+def unpause_gap(gap_id: str) -> dict[str, Any]:
+    """Resume a gap the operator paused via the action-inbox
+    "not right now" button. After this the scheduler will dispatch
+    workers against the gap normally."""
+    s = get_state()
+    g = s.store.get(gap_id)
+    if g is None:
+        raise HTTPException(status_code=404, detail=f"no gap {gap_id}")
+    tick = _next_tick(s)
+    finding = s.store.apply_unpause(
+        gap_id=gap_id, tick=tick, author=FindingAuthor.user
+    )
+    s.event_bus.publish(
+        "user.gap_unpaused", tick=tick, gap_id=gap_id, finding_id=finding.id
+    )
+    return {"finding": _finding_to_dto(finding).model_dump()}
+
+
 @router.post("/gaps/{gap_id}/deny-identity")
 def deny_identity(gap_id: str, req: _IdentityDenyRequest) -> dict[str, Any]:
     s = get_state()

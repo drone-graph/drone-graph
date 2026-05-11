@@ -31,13 +31,21 @@ class _DroneChatRequest(BaseModel):
 
 
 @router.post("/api/chat/drone/{gap_id}")
+@router.post("/api/chat/gap/{gap_id}")
 def chat_with_drone(gap_id: str, req: _DroneChatRequest) -> dict[str, Any]:
-    """Send a message from the operator to the drone working on ``gap_id``.
+    """Send a message from the operator to the swarm on this gap.
 
-    Always succeeds even if no drone is currently dispatched — the next
-    drone on this gap will see the message in its initial preload context.
-    The drone may also be polling in ``cm_browser.await_operator``, in
-    which case it picks the message up within ~1.5s.
+    The chat lives on the *gap*, not on a specific drone — that's the
+    design. If there's a live drone working the gap, it sees the message
+    at its next turn boundary (or wakes from ``cm_browser.await_operator``
+    within ~1.5s). If there's no drone, the message stays in the
+    substrate and the next drone dispatched against the gap sees it
+    via context preload.
+
+    Two paths to this endpoint:
+    - ``/api/chat/drone/{gap_id}`` — legacy, original framing.
+    - ``/api/chat/gap/{gap_id}``  — preferred. The chat surface lives
+      on the gap itself, not on the ephemeral worker.
     """
     state = get_state()
     gap = state.store.get(gap_id)
@@ -60,6 +68,41 @@ def chat_with_drone(gap_id: str, req: _DroneChatRequest) -> dict[str, Any]:
         finding_id=finding.id,
     )
     return {"ok": True, "finding_id": finding.id}
+
+
+@router.get("/api/chat/gap/{gap_id}")
+def chat_history(gap_id: str, limit: int = 100) -> dict[str, Any]:
+    """Return the gap's full chat history (operator + drone messages).
+
+    Built from ``chat_with_drone`` findings keyed to this gap. Survives
+    drone exits — that's the point.
+    """
+    state = get_state()
+    gap = state.store.get(gap_id)
+    if gap is None:
+        raise HTTPException(status_code=404, detail=f"no gap {gap_id!r}")
+    try:
+        findings = state.store.recent_findings(limit=max(50, limit * 2))
+    except Exception:  # noqa: BLE001
+        findings = []
+    out: list[dict[str, Any]] = []
+    for f in findings:
+        if f.kind != FindingKind.chat_with_drone:
+            continue
+        if gap_id not in (f.affected_gap_ids or []):
+            continue
+        out.append(
+            {
+                "id": f.id,
+                "author": f.author.value,
+                "text": f.summary,
+                "ts": f.created_at.isoformat(),
+                "tick": f.tick,
+            }
+        )
+        if len(out) >= limit:
+            break
+    return {"gap_id": gap_id, "messages": out}
 
 
 @router.get("/api/drones/{gap_id}/browser-state")

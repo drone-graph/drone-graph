@@ -175,14 +175,29 @@ class InboxItem(BaseModel):
 class InboxResolveRequest(BaseModel):
     """Operator response to a block.
 
-    For ``credential`` / ``oauth`` / ``mfa``: the operator stores the secret
-    in Settings (under the named ``details.secret_name``) themselves; the
-    resolve note just says *that it's been done*. For ``purchase`` /
-    ``approval``: the operator records the outcome (approved / declined /
-    completed externally) and optionally an external id (order id, etc.).
+    Outcome captures the operator's *intent*:
+
+    * ``resolved`` — operator did the thing; drone can proceed.
+    * ``try_another_way`` — operator agrees with the goal but rejects
+      this means. Substrate writes a note tagged so GF decomposes around
+      the rejected route. Gap stays unfilled.
+    * ``dont_do_this`` — operator rejects the goal itself. Substrate
+      retires the affected gap(s). No re-attempts.
+    * ``not_right_now`` — operator wants to revisit later. Substrate
+      pauses the affected gap(s); scheduler skips them until unpause.
+    * ``declined`` / ``skipped`` — legacy single-outcome paths (kept for
+      backward compatibility with existing UIs). Behave like
+      ``try_another_way``.
     """
 
-    outcome: Literal["resolved", "declined", "skipped"] = "resolved"
+    outcome: Literal[
+        "resolved",
+        "try_another_way",
+        "dont_do_this",
+        "not_right_now",
+        "declined",
+        "skipped",
+    ] = "resolved"
     note: str | None = None
     external_id: str | None = None
 
@@ -247,8 +262,15 @@ def resolve_inbox(finding_id: str, req: InboxResolveRequest) -> dict[str, Any]:
         )
     # Compose a clear unblock note. Secret values never travel through this
     # endpoint — drones pull them from the local Settings store by name.
+    outcome = req.outcome
+    # Legacy passthrough — pre-3-button UIs default to "declined" or
+    # "skipped" which we treat as the "try another way" path. This way
+    # the old single-deny button keeps producing the route-around
+    # behavior GF was already trained to expect.
+    if outcome in ("declined", "skipped"):
+        outcome = "try_another_way"
     summary_lines = [
-        f"User responded to block {block.id}: {req.outcome}.",
+        f"User responded to block {block.id}: {outcome}.",
     ]
     if req.note:
         summary_lines.append(req.note.strip())
@@ -257,15 +279,49 @@ def resolve_inbox(finding_id: str, req: InboxResolveRequest) -> dict[str, Any]:
     summary = "\n".join(summary_lines)
 
     tick = _next_tick(s)
+    # Artefact path scheme tells GF what the operator's intent was.
+    # ``inbox-resolution:`` keeps the legacy "block is resolved, clear it
+    # from the inbox" semantics. ``inbox-deny:<intent>:`` rides on top
+    # so GF reads the intent and routes accordingly.
+    paths = [f"inbox-resolution:{block.id}"]
+    if outcome != "resolved":
+        paths.append(f"inbox-deny:{outcome}:{block.id}")
     note = s.store.append_finding(
         tick=tick,
         author=FindingAuthor.user,
         kind=FindingKind.note,
         summary=summary,
         affected_gap_ids=list(block.affected_gap_ids),
-        # Reference the original block so we can detect resolution later.
-        artefact_paths=[f"inbox-resolution:{block.id}"],
+        artefact_paths=paths,
     )
+    # Side-effects on the affected gaps depending on operator intent.
+    # try_another_way: gap stays unfilled; GF reads the deny intent and
+    # decomposes around the rejected route on its next tick.
+    # dont_do_this: retire the affected gap(s) outright.
+    # not_right_now: pause the affected gap(s) so the scheduler skips
+    # them until the operator unpauses.
+    if outcome == "dont_do_this":
+        for gid in block.affected_gap_ids:
+            try:
+                s.store.apply_retire(
+                    gap_id=gid,
+                    reason=(req.note or "operator declined: don't do this"),
+                    tick=tick,
+                    author=FindingAuthor.user,
+                )
+            except Exception:  # noqa: BLE001 - gap may already be retired
+                pass
+    elif outcome == "not_right_now":
+        for gid in block.affected_gap_ids:
+            try:
+                s.store.apply_pause(
+                    gap_id=gid,
+                    tick=tick,
+                    reason=(req.note or "operator: not right now"),
+                    author=FindingAuthor.user,
+                )
+            except Exception:  # noqa: BLE001
+                pass
     s.event_bus.publish(
         "user.inbox_resolved",
         block_id=block.id,

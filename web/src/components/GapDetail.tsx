@@ -4,6 +4,8 @@ import { api } from "../api";
 import { selectGap, store } from "../state";
 import type { Finding, Gap } from "../types";
 
+import { GapChat } from "./GapChat";
+
 export function GapDetailOverlay() {
   const gap = () => {
     const id = store.selected_gap_id;
@@ -39,6 +41,21 @@ export function GapDetailOverlay() {
               <Show when={gap()!.preset_kind}>
                 <span class="tag amber">preset:{gap()!.preset_kind}</span>
               </Show>
+              <Show when={gap()!.paused}>
+                <span class="tag copper" title="operator paused this gap">paused</span>
+              </Show>
+              <Show when={gap()!.uses_operator_identity}>
+                <Show
+                  when={gap()!.identity_approved}
+                  fallback={
+                    <span class="tag amber" title="awaiting your approval in the action inbox">
+                      identity: pending
+                    </span>
+                  }
+                >
+                  <span class="tag teal">identity: approved</span>
+                </Show>
+              </Show>
               <span class="mono faint" style={{ "font-size": "var(--fs-xs)" }}>
                 {gap()!.id}
               </span>
@@ -69,6 +86,9 @@ export function GapDetailOverlay() {
               </div>
             </Section>
           </Show>
+          <Section title="chat with this gap">
+            <GapChat gapId={gap()!.id} />
+          </Section>
           <Section title="findings on this gap">
             <Show
               when={(findings() ?? []).length > 0}
@@ -218,13 +238,20 @@ function Actions(props: { g: Gap }) {
       window.alert(String(e));
     }
   }
-  async function speak() {
-    const text = window.prompt(`Speak to gap ${props.g.id.slice(0, 8)}:`);
-    if (text && text.trim()) await api.chat(text, props.g.id);
+  async function unpause() {
+    try {
+      await api.unpauseGap(props.g.id);
+    } catch (e) {
+      window.alert(String(e));
+    }
   }
   return (
     <>
-      <button onClick={speak}>speak to this gap</button>
+      <Show when={props.g.paused}>
+        <button class="primary" onClick={unpause} title="resume after 'not right now'">
+          resume
+        </button>
+      </Show>
       <Show when={!props.g.preset_kind && props.g.status === "unfilled"}>
         <button onClick={rewrite}>rewrite…</button>
       </Show>

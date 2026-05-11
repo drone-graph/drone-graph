@@ -152,12 +152,37 @@ export const api = {
       `/api/edit/gaps/${encodeURIComponent(gap_id)}/deny-identity`,
       { method: "POST", body: { reason } },
     ),
+  unpauseGap: (gap_id: string) =>
+    http<{ finding: unknown }>(
+      `/api/edit/gaps/${encodeURIComponent(gap_id)}/unpause`,
+      { method: "POST" },
+    ),
 
   // ---- Drone-attached chat + computer-use --------------------------------
   chatWithDrone: (gap_id: string, text: string) =>
     http<{ ok: boolean; finding_id: string }>(
       `/api/chat/drone/${encodeURIComponent(gap_id)}`,
       { method: "POST", body: { text } },
+    ),
+  // Preferred shape: chat lives on the gap. Same backend behavior,
+  // cleaner mental model.
+  chatGap: (gap_id: string, text: string) =>
+    http<{ ok: boolean; finding_id: string }>(
+      `/api/chat/gap/${encodeURIComponent(gap_id)}`,
+      { method: "POST", body: { text } },
+    ),
+  chatGapHistory: (gap_id: string, limit = 100) =>
+    http<{
+      gap_id: string;
+      messages: {
+        id: string;
+        author: string;
+        text: string;
+        ts: string;
+        tick: number;
+      }[];
+    }>(
+      `/api/chat/gap/${encodeURIComponent(gap_id)}?limit=${limit}`,
     ),
   browserState: (gap_id: string) =>
     http<BrowserState>(`/api/drones/${encodeURIComponent(gap_id)}/browser-state`),

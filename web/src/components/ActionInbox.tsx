@@ -106,11 +106,26 @@ function InboxRow(props: { item: InboxItem; close: () => void }) {
   const [showDetail, setShowDetail] = createSignal(false);
   const [busy, setBusy] = createSignal(false);
 
-  async function resolve(outcome: "resolved" | "declined" | "skipped") {
-    const note = window.prompt(
-      `Resolution note (what did you do?)`,
-      outcome === "resolved" ? "completed externally" : outcome,
-    );
+  async function resolve(
+    outcome:
+      | "resolved"
+      | "try_another_way"
+      | "dont_do_this"
+      | "not_right_now",
+  ) {
+    const promptLabels: Record<typeof outcome, string> = {
+      resolved: "What did you do? (optional)",
+      try_another_way: "Why this route isn't workable — so GF can pick another (optional)",
+      dont_do_this: "Why you're rejecting the goal (optional)",
+      not_right_now: "When to come back to this, or context (optional)",
+    } as const;
+    const defaultLabels: Record<typeof outcome, string> = {
+      resolved: "completed externally",
+      try_another_way: "",
+      dont_do_this: "",
+      not_right_now: "",
+    } as const;
+    const note = window.prompt(promptLabels[outcome], defaultLabels[outcome]);
     if (note === null) return;
     setBusy(true);
     try {
@@ -223,10 +238,29 @@ function InboxRow(props: { item: InboxItem; close: () => void }) {
               <button
                 class="ghost"
                 disabled={busy()}
-                onClick={() => void resolve("declined")}
+                onClick={() => void resolve("dont_do_this")}
                 style={{ "font-size": "var(--fs-xs)" }}
+                title="reject the goal — gap will be retired"
               >
-                decline
+                don't do this
+              </button>
+              <button
+                class="ghost"
+                disabled={busy()}
+                onClick={() => void resolve("not_right_now")}
+                style={{ "font-size": "var(--fs-xs)" }}
+                title="pause the gap — resume later from the gap detail"
+              >
+                not right now
+              </button>
+              <button
+                class="ghost"
+                disabled={busy()}
+                onClick={() => void resolve("try_another_way")}
+                style={{ "font-size": "var(--fs-xs)" }}
+                title="keep the goal, reject this means — GF decomposes around it"
+              >
+                try another way
               </button>
               <button
                 class="primary"

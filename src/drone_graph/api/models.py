@@ -28,12 +28,22 @@ class GapDTO(BaseModel):
     status: Literal["unfilled", "filled", "retired"]
     reopen_count: int
     retire_reason: str | None = None
-    model_tier: Literal["cheap", "standard", "frontier"]
+    model_tier: Literal[
+        "nano", "mini", "standard", "advanced", "frontier",
+        # legacy values from earlier tier scheme — kept so existing nodes
+        # round-trip without validation failures.
+        "cheap",
+    ]
     created_at: datetime
     tool_loadout: list[str] = Field(default_factory=list)
     tool_suggestions: list[str] = Field(default_factory=list)
     context_preload: list[str] = Field(default_factory=list)
     preset_kind: str | None = None
+    uses_operator_identity: bool = False
+    identity_approved: bool = False
+    identity_denied_reason: str | None = None
+    max_output_tokens: int | None = None
+    paused: bool = False
 
 
 # ---- Findings --------------------------------------------------------------
