@@ -58,7 +58,27 @@ def _narrate_drone_exit(
 
     Uses the operator's provider with the ``nano`` tier model so cost is
     bounded to a few cents per swarm session even at high drone counts.
+
+    Honest-narration guard: outcomes that aren't the drone's own
+    decision (cancelled, budget_exceeded) get a fixed string instead of
+    an LLM call. Previously the nano narrator invented plausible-sounding
+    "I stopped because I need X" reasons for cancellations the drone
+    didn't actually choose — misleading the operator into thinking the
+    drone was asking for help when it had just been shut down.
     """
+    outcome_label = outcome or terminal_finding.kind.value
+    if outcome_label == "cancelled":
+        return (
+            "My work on this gap was cancelled before I could finish — "
+            "the scheduler signaled stop (likely a restart, retire, or "
+            "shutdown). No action needed on your part; a future drone "
+            "will pick this gap up if it's still unfilled."
+        )
+    if outcome_label == "budget_exceeded":
+        return (
+            "Exiting because the swarm hit its cost ceiling. Raise the "
+            "ceiling in the top bar to let me continue."
+        )
     try:
         from drone_graph.gaps.records import ModelTier
         from drone_graph.model_registry.registry import ModelRegistry

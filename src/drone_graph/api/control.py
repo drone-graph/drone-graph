@@ -268,6 +268,20 @@ class SwarmController:
                 sched.run()
             except Exception as e:  # noqa: BLE001 - surface to the API tape
                 self.event_bus.publish("scheduler.error", error=str(e))
+            # If the loop exited despite the operator NOT having requested
+            # stop, that's an unintended death. Surface it on the event
+            # bus + the swarm state ("stopped") so the operator sees a
+            # restart prompt instead of staring at a dead "active" UI.
+            try:
+                requested = bool(self.control.stop_requested)
+            except Exception:  # noqa: BLE001
+                requested = False
+            if not requested:
+                self.event_bus.publish(
+                    "scheduler.died",
+                    run_id=self.run_id,
+                    stop_reason=getattr(sched, "stop_reason", "") or "unknown",
+                )
 
         self._sched_thread = threading.Thread(
             target=_run, name="swarm-scheduler", daemon=True
@@ -432,10 +446,23 @@ class SwarmController:
         return out
 
     def swarm_state(self) -> str:
-        """One of: idle | active | paused | cost_locked | resting."""
+        """One of: idle | active | paused | cost_locked | resting | stopped.
+
+        ``stopped`` means the scheduler thread is no longer alive — it
+        died on an uncaught exception or a stop signal but the
+        controller never got restarted. Surfaces clearly in the UI so
+        the operator knows to hit Restart instead of staring at a swarm
+        that looks 'active' but isn't dispatching anything.
+        """
         sched = self._scheduler
         if sched is None:
             return "idle"
+        # Detect a dead scheduler thread before reporting active state.
+        # Without this, /api/status reports state=active forever even
+        # though no ticks are firing — exactly the trap we just hit.
+        t = self._sched_thread
+        if t is not None and not t.is_alive():
+            return "stopped"
         if self._budget_blown():
             return "cost_locked"
         if self.control.is_paused:

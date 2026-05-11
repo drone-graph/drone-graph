@@ -58,6 +58,12 @@ from drone_graph.signals import SQLiteSignalStore, default_db_path
 from drone_graph.substrate import Substrate
 
 DEFAULT_MAX_WORKERS = 20
+
+# Self-healing tick loop: bail only after this many consecutive tick
+# exceptions. Transient blips (Neo4j hiccup, race condition) shouldn't
+# kill the scheduler; a deterministic poison-pill should. 5 is generous
+# enough to ride out a slow network without masking real bugs.
+_MAX_CONSECUTIVE_TICK_ERRORS = 5
 DEFAULT_TICK_S = 1.0
 DEFAULT_ALIGNMENT_EVERY = 3
 DEFAULT_MAX_GF = 15
@@ -202,9 +208,31 @@ class Scheduler:
 
     def run(self) -> None:
         self._emit("scheduler.start", run_id=self.run_id, max_workers=self.max_workers)
+        # Self-healing tick loop. A single bad tick (Neo4j blip, race
+        # condition, transient bug) must NOT kill the whole scheduler —
+        # the operator would just see "active" forever with nothing
+        # dispatching. Catch the exception, log it as a tape event, and
+        # keep going. Only bail if we've had ``_MAX_CONSECUTIVE_TICK_ERRORS``
+        # bad ticks in a row (suggests a deterministic poison-pill).
+        consecutive_tick_errors = 0
         try:
             while True:
-                self._tick()
+                try:
+                    self._tick()
+                    consecutive_tick_errors = 0
+                except Exception as e:  # noqa: BLE001
+                    consecutive_tick_errors += 1
+                    self._emit(
+                        "scheduler.tick_error",
+                        error=f"{type(e).__name__}: {e}",
+                        consecutive=consecutive_tick_errors,
+                    )
+                    if consecutive_tick_errors >= _MAX_CONSECUTIVE_TICK_ERRORS:
+                        self.stop_reason = (
+                            f"{consecutive_tick_errors} consecutive tick errors; "
+                            f"last: {type(e).__name__}: {e}"
+                        )
+                        break
                 if self._should_stop():
                     break
                 self._sleep_until_next_tick(self._effective_tick_s())

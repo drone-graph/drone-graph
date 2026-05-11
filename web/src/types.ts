@@ -15,7 +15,10 @@ export type SwarmState =
   | "active"
   | "paused"
   | "cost_locked"
-  | "resting";
+  | "resting"
+  /** Scheduler thread died unexpectedly (uncaught exception or repeated
+   *  tick errors). UI prompts to restart instead of pretending active. */
+  | "stopped";
 
 export interface Gap {
   id: string;

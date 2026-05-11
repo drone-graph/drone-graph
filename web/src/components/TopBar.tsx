@@ -36,6 +36,7 @@ export function TopBar() {
       paused: "⏸ paused",
       cost_locked: "⏸ ceiling",
       resting: "◌ resting",
+      stopped: "✕ stopped",
     }[s.state];
   });
 
@@ -48,6 +49,7 @@ export function TopBar() {
       paused: "var(--amber)",
       cost_locked: "var(--copper)",
       resting: "var(--teal-dim)",
+      stopped: "var(--copper)",
     }[s.state];
   });
 
