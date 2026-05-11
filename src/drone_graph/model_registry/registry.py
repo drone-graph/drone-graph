@@ -4,6 +4,7 @@ import os
 from importlib import resources
 from pathlib import Path
 
+from drone_graph.drones.providers import Provider
 from drone_graph.gaps.records import Gap, ModelTier
 from drone_graph.model_registry.records import ModelRegistryEntry, ModelRegistryFile
 
@@ -49,7 +50,17 @@ class ModelRegistry:
             raise KeyError(msg)
         return m
 
-    def resolve_for_tier(self, tier: ModelTier) -> ModelRegistryEntry:
+    def resolve_for_tier(
+        self,
+        tier: ModelTier,
+        provider: Provider,
+        *,
+        allow_provider_fallback: bool = True,
+    ) -> ModelRegistryEntry:
+        """Resolve a tier to a concrete model within the given provider's
+        ladder. When ``allow_provider_fallback`` is set and ``provider`` has
+        no complete ladder, fall through to any provider that does — useful
+        when the operator only has one vendor key configured."""
         if not self._data.models:
             msg = (
                 "Model registry is empty. Run `drone-graph model-registry fresh` "
@@ -58,15 +69,54 @@ class ModelRegistry:
                 "models into your registry file."
             )
             raise ValueError(msg)
-        gid = self._data.tier_defaults[tier]
+        candidates: list[Provider] = []
+        if provider in self._data.tier_defaults_by_provider and len(
+            self._data.tier_defaults_by_provider[provider]
+        ) == 5:
+            candidates.append(provider)
+        if allow_provider_fallback:
+            for p in self._data.providers_with_ladder:
+                if p not in candidates:
+                    candidates.append(p)
+        if not candidates:
+            raise ValueError(
+                f"No complete tier ladder for provider {provider.value!r} and "
+                "no fallback ladders available."
+            )
+        chosen_provider = candidates[0]
+        ladder = self._data.tier_defaults_by_provider[chosen_provider]
+        gid = ladder[tier]
         m = self.require(gid)
         if m.deprecated:
-            msg = f"Resolved model {gid!r} is deprecated (check tier_defaults)"
-            raise ValueError(msg)
+            raise ValueError(
+                f"Resolved model {gid!r} (provider={chosen_provider.value}, "
+                f"tier={tier.value}) is deprecated; check tier_defaults_by_provider"
+            )
         return m
 
-    def resolve_for_gap(self, gap: Gap) -> ModelRegistryEntry:
-        return self.resolve_for_tier(gap.model_tier)
+    def resolve_for_gap(
+        self,
+        gap: Gap,
+        provider: Provider,
+        *,
+        allow_provider_fallback: bool = True,
+        overrides: dict[str, dict[str, str]] | None = None,
+    ) -> ModelRegistryEntry:
+        """Resolve a (gap, provider) pair to a concrete model, honoring
+        operator overrides from Settings first, then falling back to the
+        registry's ``tier_defaults_by_provider``."""
+        if overrides:
+            ladder = overrides.get(provider.value, {})
+            override_gid = ladder.get(gap.model_tier.value)
+            if override_gid:
+                m = self.get(override_gid)
+                if m is not None and not m.deprecated:
+                    return m
+        return self.resolve_for_tier(
+            gap.model_tier,
+            provider,
+            allow_provider_fallback=allow_provider_fallback,
+        )
 
     def estimate_cost_usd(
         self,

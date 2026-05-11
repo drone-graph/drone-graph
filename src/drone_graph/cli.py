@@ -127,6 +127,121 @@ def _bootstrap() -> Substrate:
     return s
 
 
+@app.command("export-run")
+def export_run_cmd(
+    run_id: str | None = typer.Argument(
+        None,
+        help=(
+            "Mission-control run id to export (the suffix after "
+            "``mission-control-`` in var/runs/). Omit to use the latest."
+        ),
+    ),
+    out: Path | None = typer.Option(
+        None,
+        "--out",
+        help="Output directory or zip path. Default: var/exports/run-<run_id>-<ts>/",
+    ),
+    zip_bundle: bool = typer.Option(
+        False,
+        "--zip",
+        help="Also zip the bundle to <out>.zip.",
+    ),
+    skip_artefacts: bool = typer.Option(
+        False,
+        "--skip-artefacts",
+        help="Skip copying artefact files referenced by finding.artefact_paths.",
+    ),
+) -> None:
+    """Bundle a swarm session into a self-contained directory for review.
+
+    Snapshots the substrate (gaps, findings, tools, edges), copies the
+    scheduler tape + per-drone tapes, and best-effort copies any artefacts
+    the findings reference. Writes ``summary.md``.
+
+    Run while the swarm is active or after it's stopped — the exporter only
+    reads.
+    """
+    from drone_graph import exporter as ex
+
+    target_run = run_id or ex.find_latest_run_id()
+    if target_run is None:
+        typer.secho(
+            "no mission-control runs found under var/runs/",
+            err=True,
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(code=1)
+    if out is None:
+        from datetime import UTC, datetime
+
+        ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+        out = Path("var") / "exports" / f"run-{target_run}-{ts}"
+
+    substrate = _substrate()
+    bundle = ex.export_run(
+        run_id=target_run,
+        out_dir=out,
+        include_artefacts=not skip_artefacts,
+        substrate=substrate,
+    )
+    typer.echo(f"exported run {target_run} → {bundle}")
+    if zip_bundle:
+        zip_path = bundle.with_suffix(".zip")
+        ex.zip_bundle(bundle, zip_path)
+        typer.echo(f"zipped → {zip_path}")
+
+
+@app.command("serve")
+def serve_cmd(
+    host: str = typer.Option("127.0.0.1", "--host", help="Bind address (local-only by default)."),
+    port: int = typer.Option(8765, "--port", help="Bind port."),
+    provider: str | None = typer.Option(
+        None, "--provider", help="anthropic|openai (defaults to whatever key is set)."
+    ),
+    model: str | None = typer.Option(
+        None, "--model", help="Vendor model id (default: claude-sonnet-4-6 or gpt-4o)."
+    ),
+    cost_ceiling_usd: float | None = typer.Option(
+        None, "--cost-ceiling-usd", help="Swarm cost ceiling at startup; adjustable from the UI.",
+    ),
+    signal_db: Path | None = typer.Option(
+        None, "--signal-db", help="Sidecar SQLite path (default: var/signals.db).",
+    ),
+    reload: bool = typer.Option(
+        False, "--reload", help="Use uvicorn's reload mode (for backend dev).",
+    ),
+    skip_bringup: bool = typer.Option(
+        False,
+        "--skip-bringup",
+        help="Skip auto-build of the frontend and Neo4j bringup checks.",
+    ),
+) -> None:
+    """Run the mission-control web server (FastAPI + SSE + frontend).
+
+    Local-only by default. Talks to the same Neo4j + sidecar SQLite that the
+    CLI does. Opens the persistent substrate as an infinite-mode swarm,
+    paused until the operator sends a first prompt from the UI.
+
+    By default this is a one-command boot: it auto-builds the frontend if
+    needed, brings Neo4j up via ``docker compose`` if the bolt port isn't
+    answering, and tolerates a missing provider key (you enter it in the
+    UI Settings panel). Pass ``--skip-bringup`` for fast restarts after
+    you've already done the bringup once.
+    """
+    from drone_graph.api import serve
+
+    serve(
+        host=host,
+        port=port,
+        provider=provider,
+        model=model,
+        cost_ceiling_usd=cost_ceiling_usd,
+        signal_db=signal_db,
+        reload=reload,
+        skip_bringup=skip_bringup,
+    )
+
+
 @app.command("reset-db")
 def reset_db() -> None:
     """Delete all nodes, then re-mint preset gaps + builtin tools. Dev convenience."""

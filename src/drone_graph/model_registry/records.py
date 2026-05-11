@@ -124,11 +124,13 @@ class ModelRegistryEntry(BaseModel):
 
 
 class ModelRegistryFile(BaseModel):
-    tier_defaults: dict[ModelTier, str] = Field(
-        ...,
+    tier_defaults_by_provider: dict[Provider, dict[ModelTier, str]] = Field(
+        default_factory=dict,
         description=(
-            "Maps each ModelTier to dgraph_model_id when models[] is non-empty; "
-            "must be {} when models[] is empty (bootstrap before model-registry fresh)."
+            "Per-provider tier ladder. ``tier_defaults_by_provider[provider][tier]`` "
+            "maps to a dgraph_model_id. Required when models[] is non-empty: at "
+            "least one provider must have all three tiers covered (cheap, "
+            "standard, frontier); other providers may be partial or absent."
         ),
     )
     models: list[ModelRegistryEntry]
@@ -136,33 +138,75 @@ class ModelRegistryFile(BaseModel):
     @model_validator(mode="after")
     def _validate_registry(self) -> ModelRegistryFile:
         if not self.models:
-            if self.tier_defaults:
+            if self.tier_defaults_by_provider:
                 raise ValueError(
-                    "Bootstrap state requires models[] empty and tier_defaults {}. "
-                    "Run `drone-graph model-registry fresh` to populate, then set "
-                    "tier_defaults to dgraph_model_ids that exist in models[]."
+                    "Bootstrap state requires models[] empty and "
+                    "tier_defaults_by_provider {}. Run "
+                    "`drone-graph model-registry fresh` to populate."
                 )
             return self
 
         ids = [m.dgraph_model_id for m in self.models]
         if len(ids) != len(set(ids)):
             raise ValueError("Duplicate dgraph_model_id in models[]")
-
         by_id = {m.dgraph_model_id: m for m in self.models}
-        for tier, gid in self.tier_defaults.items():
-            if gid not in by_id:
-                msg = f"tier_defaults[{tier!r}] points to unknown dgraph_model_id: {gid!r}"
-                raise ValueError(msg)
-            if by_id[gid].deprecated:
-                msg = f"tier_defaults[{tier!r}] must not reference deprecated model: {gid!r}"
-                raise ValueError(msg)
 
-        expected = {ModelTier.cheap, ModelTier.standard, ModelTier.frontier}
-        if set(self.tier_defaults.keys()) != expected:
-            missing = expected - set(self.tier_defaults.keys())
-            extra = set(self.tier_defaults.keys()) - expected
+        expected_tiers = {
+            ModelTier.nano,
+            ModelTier.mini,
+            ModelTier.standard,
+            ModelTier.advanced,
+            ModelTier.frontier,
+        }
+        complete_ladders = 0
+
+        for provider, ladder in self.tier_defaults_by_provider.items():
+            for tier, gid in ladder.items():
+                if gid not in by_id:
+                    raise ValueError(
+                        f"tier_defaults_by_provider[{provider.value}][{tier.value}] "
+                        f"points to unknown dgraph_model_id: {gid!r}"
+                    )
+                entry = by_id[gid]
+                if entry.deprecated:
+                    raise ValueError(
+                        f"tier_defaults_by_provider[{provider.value}][{tier.value}] "
+                        f"references deprecated model: {gid!r}"
+                    )
+                if entry.provider != provider:
+                    raise ValueError(
+                        f"tier_defaults_by_provider[{provider.value}][{tier.value}]"
+                        f"={gid!r} but model has provider={entry.provider.value}"
+                    )
+            if set(ladder.keys()) == expected_tiers:
+                complete_ladders += 1
+            elif ladder:
+                missing = expected_tiers - set(ladder.keys())
+                raise ValueError(
+                    f"tier_defaults_by_provider[{provider.value}] is partial "
+                    f"(missing {missing}); each provider must either cover all "
+                    "three tiers or be omitted entirely."
+                )
+
+        if complete_ladders == 0:
             raise ValueError(
-                f"tier_defaults must exactly cover {expected}; missing={missing} extra={extra}"
+                "tier_defaults_by_provider must define a complete "
+                "nano/mini/standard/advanced/frontier ladder for at least "
+                "one provider when models[] is non-empty."
             )
 
         return self
+
+    def ladder(self, provider: Provider) -> dict[ModelTier, str]:
+        """Return the tier ladder for ``provider``. Raises ``KeyError`` if the
+        ladder is absent — callers should fall back to a provider that has
+        one (see ``ModelRegistry.resolve_for_tier``)."""
+        return self.tier_defaults_by_provider[provider]
+
+    @property
+    def providers_with_ladder(self) -> list[Provider]:
+        return [
+            p
+            for p, ladder in self.tier_defaults_by_provider.items()
+            if len(ladder) == 5
+        ]

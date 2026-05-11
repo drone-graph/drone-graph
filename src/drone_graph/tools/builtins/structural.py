@@ -85,7 +85,15 @@ def decompose(args: dict[str, Any], ctx: DroneContext) -> ToolResult:
         "missing_subtree flag, or a worker fail suggesting unrelated work. "
         "Prefer 'decompose' when the new work is conceptually a child of an "
         "existing gap; use 'create' only when the new work is genuinely "
-        "top-level and unrelated to the existing tree."
+        "top-level and unrelated to the existing tree. Set ``model_tier`` "
+        "based on expected difficulty so the scheduler routes workers to the "
+        "right cost/capability point: ``nano`` for trivial mechanical tasks "
+        "(renames, format conversions), ``mini`` for cheap reasoning, "
+        "``standard`` for typical work (default — pick when unsure), "
+        "``advanced`` for harder multi-step reasoning, ``frontier`` for "
+        "open-ended research / deep refactors / novel design. Tier maps to a "
+        "concrete model via the registry's tier_defaults_by_provider (and "
+        "operator overrides in Settings)."
     ),
     {
         "type": "object",
@@ -93,6 +101,15 @@ def decompose(args: dict[str, Any], ctx: DroneContext) -> ToolResult:
             "intent": {"type": "string"},
             "criteria": {"type": "string"},
             "rationale": {"type": "string"},
+            "model_tier": {
+                "type": "string",
+                "enum": ["nano", "mini", "standard", "advanced", "frontier"],
+                "description": (
+                    "Difficulty tier. Workers spawned against this gap will "
+                    "use the registry's tier_defaults_by_provider[provider]"
+                    "[model_tier] (or Settings override). Defaults to standard."
+                ),
+            },
             "tool_loadout": {"type": "array", "items": {"type": "string"}},
             "tool_suggestions": {"type": "array", "items": {"type": "string"}},
         },
@@ -100,16 +117,33 @@ def decompose(args: dict[str, Any], ctx: DroneContext) -> ToolResult:
     },
 )
 def create(args: dict[str, Any], ctx: DroneContext) -> ToolResult:
+    from drone_graph.gaps.records import ModelTier
+
+    tier = ModelTier.standard
+    raw_tier = str(args.get("model_tier", "")).strip().lower()
+    if raw_tier:
+        try:
+            tier = ModelTier(raw_tier)
+        except ValueError:
+            return ToolResult(
+                content=(
+                    f"create error: invalid model_tier {raw_tier!r}; "
+                    f"expected one of nano | mini | standard | advanced | frontier"
+                )
+            )
     try:
         f = ctx.store.apply_create(
             intent=str(args["intent"]),
             criteria=str(args["criteria"]),
             rationale=str(args["rationale"]),
             tick=ctx.tick,
+            tier=tier,
+            tool_loadout=list(args.get("tool_loadout") or []) or None,
+            tool_suggestions=list(args.get("tool_suggestions") or []) or None,
         )
     except (ValueError, KeyError, TypeError) as e:
         return _err_result("create", e)
-    return ToolResult(content=f"created: {f.id}")
+    return ToolResult(content=f"created: {f.id} (tier={tier.value})")
 
 
 @register_tool(

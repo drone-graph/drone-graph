@@ -80,24 +80,48 @@ def test_anthropic_skips_legacy_ids() -> None:
 
 
 def test_select_tier_defaults_openai_only() -> None:
+    """Returns a complete 5-tier ladder under the openai key when openai
+    vendor ids are present and anthropic is empty."""
     tiers = select_tier_defaults(
         openai_vendor_ids=["gpt-4o-mini", "gpt-4o", "o1"],
         anthropic_vendor_ids=[],
     )
-    assert tiers[ModelTier.cheap].endswith("gpt-4o-mini")
-    assert tiers[ModelTier.standard].endswith("gpt-4o")
-    # Frontier prefers gpt-4o when present (see generator ordering), not o1.
-    assert tiers[ModelTier.frontier].endswith("gpt-4o")
+    assert Provider.openai in tiers
+    assert Provider.anthropic not in tiers
+    ladder = tiers[Provider.openai]
+    assert set(ladder.keys()) == {
+        ModelTier.nano,
+        ModelTier.mini,
+        ModelTier.standard,
+        ModelTier.advanced,
+        ModelTier.frontier,
+    }
+    # All five tier values should be dgraph ids starting with the openai prefix.
+    for gid in ladder.values():
+        assert gid.startswith("dgraph-openai-")
+    # cheapest tier should map to gpt-4o-mini (in the preference list for nano)
+    assert ladder[ModelTier.nano].endswith("gpt-4o-mini")
 
 
-def test_select_tier_defaults_mixed_prefers_anthropic_frontier() -> None:
+def test_select_tier_defaults_mixed_populates_both_providers() -> None:
+    """Each provider gets its own ladder — no longer cross-vendor."""
     tiers = select_tier_defaults(
         openai_vendor_ids=["gpt-4o-mini", "gpt-4o"],
-        anthropic_vendor_ids=["claude-3-5-sonnet-20241022"],
+        anthropic_vendor_ids=["claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022"],
     )
-    assert "openai" in tiers[ModelTier.cheap]
-    assert "openai" in tiers[ModelTier.standard]
-    assert "anthropic" in tiers[ModelTier.frontier]
+    assert Provider.openai in tiers
+    assert Provider.anthropic in tiers
+    for gid in tiers[Provider.openai].values():
+        assert gid.startswith("dgraph-openai-")
+    for gid in tiers[Provider.anthropic].values():
+        assert gid.startswith("dgraph-anthropic-")
+
+
+def test_select_tier_defaults_raises_when_no_models() -> None:
+    import pytest
+
+    with pytest.raises(ValueError, match="no vendor models"):
+        select_tier_defaults(openai_vendor_ids=[], anthropic_vendor_ids=[])
 
 
 def _info(vendor_id: str) -> ModelInfo:

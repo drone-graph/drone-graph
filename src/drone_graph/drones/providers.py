@@ -109,19 +109,101 @@ def _retryable_chat(
     return _wrapped
 
 
-# USD per 1M tokens (input, output). Update as pricing changes.
-_PRICING: dict[tuple[Provider, str], tuple[float, float]] = {
+# Hardcoded fallback pricing in case the model registry can't be loaded.
+# Kept in sync with the registry JSON at packaging time. The registry is the
+# source of truth — see ``cost_usd`` below.
+#
+# WARNING: do not edit these without also updating
+# ``src/drone_graph/model_registry/model_registry.json``. Drift between the
+# two caused a 3× over-count of Opus turns in the past (we had Opus listed at
+# $15/$75 when the actual Anthropic rate for the 4.5+ generation is $5/$25).
+_PRICING_FALLBACK: dict[tuple[Provider, str], tuple[float, float]] = {
     (Provider.anthropic, "claude-sonnet-4-6"): (3.0, 15.0),
-    (Provider.anthropic, "claude-opus-4-7"): (15.0, 75.0),
+    (Provider.anthropic, "claude-opus-4-7"): (5.0, 25.0),
+    (Provider.anthropic, "claude-opus-4-6"): (5.0, 25.0),
     (Provider.anthropic, "claude-haiku-4-5-20251001"): (1.0, 5.0),
     (Provider.openai, "gpt-4o"): (2.5, 10.0),
     (Provider.openai, "gpt-4o-mini"): (0.15, 0.6),
 }
 
 
+# Cache the registry across calls — loading the JSON for every drone turn
+# would be wasteful. ``None`` means "not yet attempted"; an explicit empty
+# dict means "registry unavailable, use the fallback table forever."
+_REGISTRY_PRICE_CACHE: dict[tuple[Provider, str], tuple[float, float]] | None = None
+
+
+def _load_pricing() -> dict[tuple[Provider, str], tuple[float, float]]:
+    """Build a ``(provider, vendor_model_id) → (in_rate, out_rate)`` table
+    from the packaged model registry. Costs are in USD per 1M tokens. The
+    registry is authoritative; this is just an indexed mirror so cost
+    lookups are O(1)."""
+    global _REGISTRY_PRICE_CACHE
+    if _REGISTRY_PRICE_CACHE is not None:
+        return _REGISTRY_PRICE_CACHE
+    try:
+        # Lazy import — avoids a cycle (model_registry imports from gaps which
+        # is imported here).
+        from drone_graph.model_registry.registry import ModelRegistry
+
+        reg = ModelRegistry.load_auto()
+        out: dict[tuple[Provider, str], tuple[float, float]] = {}
+        for entry in reg._data.models:  # noqa: SLF001 — single internal read
+            out[(entry.provider, entry.vendor_model_id)] = (
+                entry.input_price_per_million_usd,
+                entry.output_price_per_million_usd,
+            )
+        _REGISTRY_PRICE_CACHE = out
+    except Exception:
+        _REGISTRY_PRICE_CACHE = {}
+    return _REGISTRY_PRICE_CACHE
+
+
 def cost_usd(provider: Provider, model: str, usage: Usage) -> float:
-    in_rate, out_rate = _PRICING.get((provider, model), (0.0, 0.0))
+    """Estimate USD cost for one turn. Reads rates from the model registry
+    (authoritative) with a small hardcoded fallback for the case where the
+    registry can't be loaded.
+
+    Note: this does not yet model Anthropic's cache-read discount ($0.30/M
+    for cached input tokens on Sonnet). The Anthropic API returns
+    ``cache_read_input_tokens`` separately in ``usage``; until we wire that
+    through the ``Usage`` dataclass, the meter slightly *over*-estimates
+    real cost. That's the right way to be wrong (operator sees a safe
+    upper bound)."""
+    rates = _load_pricing().get((provider, model))
+    if rates is None:
+        rates = _PRICING_FALLBACK.get((provider, model), (0.0, 0.0))
+    in_rate, out_rate = rates
     return (usage.tokens_in * in_rate + usage.tokens_out * out_rate) / 1_000_000
+
+
+def _annotate_last_message_for_cache(
+    messages: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Add a ``cache_control: ephemeral`` annotation to the last content
+    block of the last message. Anthropic treats this as a cache breakpoint —
+    every prior message + content block becomes part of the cached prefix
+    on subsequent calls within the 5-minute cache lifetime.
+
+    On a 20-turn worker this is the largest single cost lever: each turn
+    re-sends the full conversation, and without a breakpoint every token
+    pays full input rate every call (quadratic growth). With a breakpoint
+    on the tail, all prior turns read from cache.
+    """
+    if not messages:
+        return messages
+    out: list[dict[str, Any]] = [dict(m) for m in messages]
+    last = out[-1]
+    content = last.get("content")
+    if isinstance(content, str):
+        last["content"] = [
+            {"type": "text", "text": content, "cache_control": {"type": "ephemeral"}}
+        ]
+    elif isinstance(content, list) and content:
+        new_blocks = [dict(b) for b in content]
+        new_blocks[-1] = {**new_blocks[-1], "cache_control": {"type": "ephemeral"}}
+        last["content"] = new_blocks
+    return out
 
 
 class AnthropicClient:
@@ -139,14 +221,32 @@ class AnthropicClient:
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]],
     ) -> ChatResponse:
+        # Ephemeral prompt caching: the system prompt, tools list, and prior
+        # message history all repeat verbatim every turn within a drone run.
+        # Marking them as cache breakpoints converts subsequent reads from
+        # full input price ($3/M for Sonnet) to ~$0.30/M — a ~10× reduction
+        # on the cached prefix and the dominant cost optimisation for
+        # multi-turn agents. Cache lifetime is 5 minutes, which comfortably
+        # covers any drone's full turn budget.
         kwargs: dict[str, Any] = {
             "model": self.model,
             "max_tokens": 4096,
-            "system": system,
-            "messages": cast(Any, messages),
+            "system": [
+                {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}
+            ],
+            "messages": cast(Any, _annotate_last_message_for_cache(messages)),
         }
         if tools:
-            kwargs["tools"] = cast(Any, tools)
+            cached_tools = list(tools)
+            if cached_tools:
+                # Caches the entire tools list up to (and including) the
+                # last tool definition. Per Anthropic, the breakpoint
+                # caches every block above it.
+                cached_tools[-1] = {
+                    **cached_tools[-1],
+                    "cache_control": {"type": "ephemeral"},
+                }
+            kwargs["tools"] = cast(Any, cached_tools)
             # Align with run_drone: every turn must invoke at least one tool.
             kwargs["tool_choice"] = cast(Any, {"type": "any"})
         resp = self._client.messages.create(**kwargs)

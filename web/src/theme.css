@@ -1,0 +1,266 @@
+/* Mission Control — design tokens & global styles.
+ *
+ * Two-color discipline: cobalt for active/healthy, teal for settled. Amber
+ * for alignment, copper for warnings. Everything else is a tone of near-
+ * black or graphite. JetBrains Mono everywhere — the whole console reads
+ * like a terminal, intentionally.
+ */
+
+:root {
+  /* Surfaces */
+  --bg-0: #070a0f; /* deep field */
+  --bg-1: #0b0f17; /* panel */
+  --bg-2: #11151f; /* recessed */
+  --bg-3: #1a1f2c; /* hover */
+  --border: #1f2532;
+  --border-strong: #2a3142;
+
+  /* Text */
+  --fg-0: #e3e8f1; /* primary */
+  --fg-1: #9aa4b8; /* secondary */
+  --fg-2: #5e6b82; /* tertiary / hints */
+  --fg-3: #3a4358; /* disabled */
+
+  /* Accents */
+  --cobalt: #3c6ef5;
+  --cobalt-soft: #5e88ff;
+  --cobalt-dim: #1d3a8a;
+  --teal: #7fe5d0;
+  --teal-dim: #3a8a7c;
+  --amber: #f5b53c;
+  --copper: #e26b43;
+  --graphite: #2a2f38;
+
+  /* Author colors */
+  --c-user: var(--cobalt);
+  --c-gap-finding: #b48cff;
+  --c-alignment: var(--amber);
+  --c-worker: #6fd0a8;
+  --c-system: #687589;
+
+  /* Type */
+  --font-mono: "JetBrains Mono", "Berkeley Mono", "IBM Plex Mono",
+    ui-monospace, SFMono-Regular, Menlo, monospace;
+  --fs-xs: 10.5px;
+  --fs-sm: 12px;
+  --fs-md: 13.5px;
+  --fs-lg: 16px;
+  --fs-xl: 22px;
+  --fs-2xl: 32px;
+
+  /* Geometry */
+  --topbar-h: 40px;
+  --drawer-h: 40px;
+  --drawer-h-open: 220px;
+  --rail-w-left: 300px;
+  --rail-w-right: 300px;
+  --rail-w-collapsed: 40px;
+
+  /* Motion */
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --beat-ms: 800ms; /* 0.8 Hz swarm heartbeat */
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  background: var(--bg-0);
+  color: var(--fg-0);
+  font-family: var(--font-mono);
+  font-size: var(--fs-md);
+  font-weight: 400;
+  letter-spacing: 0;
+  text-rendering: geometricPrecision;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+::selection {
+  background: var(--cobalt-dim);
+  color: var(--fg-0);
+}
+
+/* Particulate grain — barely perceptible, applied to body so the canvas
+ * inherits it without rendering it itself. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.025;
+  background-image: radial-gradient(
+    circle at center,
+    rgba(255, 255, 255, 0.7) 0.5px,
+    transparent 0.6px
+  );
+  background-size: 3px 3px;
+  mix-blend-mode: screen;
+}
+
+/* Scrollbars: thin, monochrome. */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--fg-3);
+}
+
+/* Buttons & inputs — consistent monospace surface. */
+button,
+input,
+textarea {
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 6px 10px;
+}
+
+button {
+  cursor: pointer;
+  transition: background-color 120ms var(--ease),
+    border-color 120ms var(--ease);
+}
+
+button:hover:not(:disabled) {
+  background: var(--bg-3);
+  border-color: var(--border-strong);
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+button.primary {
+  background: var(--cobalt-dim);
+  border-color: var(--cobalt);
+  color: var(--fg-0);
+}
+button.primary:hover {
+  background: var(--cobalt);
+}
+
+button.danger {
+  border-color: var(--copper);
+  color: var(--copper);
+}
+button.danger:hover {
+  background: rgba(226, 107, 67, 0.12);
+}
+
+button.ghost {
+  border-color: transparent;
+}
+
+input,
+textarea {
+  width: 100%;
+  outline: none;
+}
+
+input:focus,
+textarea:focus {
+  border-color: var(--cobalt);
+}
+
+textarea {
+  resize: vertical;
+  min-height: 60px;
+  font-family: inherit;
+}
+
+/* Reusable utility classes. */
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.col {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.dim {
+  color: var(--fg-1);
+}
+.faint {
+  color: var(--fg-2);
+}
+.mono {
+  font-family: var(--font-mono);
+}
+.tag {
+  font-size: var(--fs-xs);
+  padding: 1px 6px;
+  border-radius: 2px;
+  border: 1px solid var(--border-strong);
+  color: var(--fg-1);
+  text-transform: lowercase;
+  letter-spacing: 0.04em;
+}
+.tag.cobalt {
+  border-color: var(--cobalt);
+  color: var(--cobalt-soft);
+}
+.tag.teal {
+  border-color: var(--teal-dim);
+  color: var(--teal);
+}
+.tag.amber {
+  border-color: var(--amber);
+  color: var(--amber);
+}
+.tag.copper {
+  border-color: var(--copper);
+  color: var(--copper);
+}
+.tag.graphite {
+  border-color: var(--graphite);
+  color: var(--fg-2);
+}
+
+@keyframes heartbeat {
+  0%, 100% {
+    opacity: 0.85;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.02);
+  }
+}
+@keyframes ebb {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 0.95; }
+}
+@keyframes blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0.3; }
+}
+
+.heartbeat {
+  animation: heartbeat var(--beat-ms) var(--ease) infinite;
+}
+.ebb {
+  animation: ebb 5s var(--ease) infinite;
+}
+.blink {
+  animation: blink 1s steps(2, end) infinite;
+}

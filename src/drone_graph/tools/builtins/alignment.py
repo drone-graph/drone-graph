@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from drone_graph.gaps import FindingAuthor, FindingKind
+from drone_graph.gaps import FindingAuthor, FindingKind, GapStatus
 from drone_graph.tools.registry import DroneContext, ToolResult, register_tool
 
 _KIND_PREFIX = "alignment_"
@@ -60,14 +60,51 @@ def write_alignment_finding(args: dict[str, Any], ctx: DroneContext) -> ToolResu
         kind_enum = FindingKind(_KIND_PREFIX + kind_short)
     except ValueError:
         return ToolResult(content=f"unknown alignment kind {kind_short!r}")
+    affected = list(args.get("affected_gap_ids", []) or [])
     try:
         f = ctx.store.append_finding(
             tick=ctx.tick,
             author=FindingAuthor.alignment,
             kind=kind_enum,
             summary=str(args.get("summary", "")),
-            affected_gap_ids=list(args.get("affected_gap_ids", []) or []),
+            affected_gap_ids=affected,
         )
     except (ValueError, KeyError, TypeError) as e:
         return ToolResult(content=f"write_alignment_finding error: {type(e).__name__}: {e}")
-    return ToolResult(content=f"alignment finding recorded: {f.id} ({kind_short})")
+
+    # Auto-reopen on first ``unmet_intent`` flag.
+    #
+    # Alignment is observational only — it cannot itself edit structure.
+    # Historically GF was free to react to ``alignment_unmet_intent`` by
+    # rewriting the gap's criteria narrower instead of reopening it, which
+    # is exactly the scope-retreat failure mode we saw on the first run.
+    #
+    # Substrate-level rule: if alignment says a gap is filled-but-actually-
+    # unfilled and ``reopen_count == 0``, the substrate reopens the gap
+    # itself. GF can decide later whether to decompose, refill, or rewrite
+    # — but the easy "ignore alignment by narrowing criteria" path is now
+    # closed. We only do this on the FIRST flag per gap; subsequent flags
+    # remain GF's discretion to avoid ping-pong loops between alignment
+    # and GF disagreeing about whether work is really done.
+    auto_reopens: list[str] = []
+    if kind_short == "unmet_intent":
+        for gid in affected:
+            gap = ctx.store.get(gid)
+            if gap is None or gap.status is not GapStatus.filled:
+                continue
+            if gap.reopen_count > 0:
+                continue  # already reopened once; leave subsequent flags to GF
+            try:
+                ctx.store.apply_reopen(
+                    gap_id=gap.id,
+                    reason=f"auto-reopened on alignment unmet_intent (finding {f.id})",
+                    tick=ctx.tick,
+                    author=FindingAuthor.system,
+                )
+                auto_reopens.append(gap.id[:8])
+            except ValueError:
+                # Race: someone else reopened or retired between get and reopen.
+                pass
+
+    suffix = f"; auto-reopened {','.join(auto_reopens)}" if auto_reopens else ""
+    return ToolResult(content=f"alignment finding recorded: {f.id} ({kind_short}){suffix}")

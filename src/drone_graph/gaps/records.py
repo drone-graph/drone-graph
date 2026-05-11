@@ -14,8 +14,18 @@ class GapStatus(StrEnum):
 
 
 class ModelTier(StrEnum):
-    cheap = "cheap"
+    """Difficulty tier a gap claims. The scheduler resolves this through
+    ``tier_defaults_by_provider`` (or operator-set overrides) to a concrete
+    model when spawning a worker.
+
+    Five levels from cheapest/least-capable to most-capable; ``standard`` is
+    the default for newly-minted gaps and the right pick when GF is unsure.
+    """
+
+    nano = "nano"
+    mini = "mini"
     standard = "standard"
+    advanced = "advanced"
     frontier = "frontier"
 
 
@@ -57,6 +67,14 @@ class FindingKind(StrEnum):
     note = "note"
     # Record of a tool/skill invocation (Phase 4); see Finding invocation_* fields.
     skill_invocation = "skill_invocation"
+    # The drone is blocked on a human action — a credential the operator
+    # must paste, an OAuth flow only the human can complete, a purchase
+    # approval, an MFA code, etc. The drone emits this finding and exits;
+    # the gap stays unfilled. The Mission Control UI surfaces the block in
+    # its Action Inbox. When the operator resolves it, they append a
+    # ``note`` finding referencing the block; Gap Finding picks it up next
+    # tick and re-dispatches.
+    requires_user_action = "requires_user_action"
 
 
 def _now() -> datetime:
@@ -94,6 +112,14 @@ class Gap(BaseModel):
     # stable preset id; ``None`` for emergent gaps. Preset gaps are minted at
     # substrate init and are never closed or retired by the loop.
     preset_kind: str | None = None
+    # Optional thinking-effort hint for the resolved worker model. ``None``
+    # means "N/A" (use the model's default). Values are vendor-agnostic
+    # tokens — ``low``, ``medium``, ``high``, ``xhigh``, ``max`` — that get
+    # mapped to provider-specific API parameters (Anthropic extended
+    # thinking budget; OpenAI ``reasoning_effort``). If the resolved model
+    # doesn't support thinking, this value is silently ignored at dispatch
+    # time so GF can set it without worrying about model capability.
+    reasoning_effort: str | None = None
 
 
 class Finding(BaseModel):

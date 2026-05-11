@@ -38,6 +38,163 @@ from drone_graph.tools.trust import effective_trust
 DEFAULT_COMMAND_TIMEOUT_S = 60.0
 
 
+# ---- Real-world side-effect detection ------------------------------------
+#
+# Surface external-facing terminal commands to the operator's chat in real
+# time. Uses shell-aware token parsing rather than substring regex so that
+# DISCOVERY commands (``which wrangler``, ``ls ~/.fly``, ``cat ~/.netlify``)
+# don't false-positive as deploys. Only the FIRST token of each sub-command
+# is treated as the invocation; tool names that appear only as arguments to
+# something else (``which``, ``cat``, ``ls``, etc.) are ignored.
+
+import re as _re
+
+
+# Read-only / discovery commands. When one of these is the first token of a
+# sub-command, everything after it is treated as data, not invocations.
+_DISCOVERY_CMDS = frozenset({
+    "which", "type", "command",
+    "ls", "cat", "head", "tail", "less", "more", "stat", "file",
+    "find", "grep", "rg", "ag", "wc",
+    "echo", "printf",
+    "test", "[", "[[",
+    "man", "help",
+    "history",
+    "env", "printenv",
+    "pwd", "whoami", "id",
+    "if", "while", "for", "case",
+})
+
+
+# Side-effecting commands keyed by the executable name (first token).
+# Each entry produces a ``{category, description}`` event in the chat rail.
+_SIDE_EFFECTING_CMDS: dict[str, tuple[str, str]] = {
+    "vercel":    ("deploy", "deploying to Vercel"),
+    "netlify":   ("deploy", "deploying to Netlify"),
+    "wrangler":  ("deploy", "deploying via Cloudflare"),
+    "gh-pages":  ("deploy", "running gh-pages publisher"),
+    "fly":       ("deploy", "deploying via Fly.io"),
+    "flyctl":    ("deploy", "deploying via Fly.io"),
+    "heroku":    ("deploy", "running a Heroku command"),
+    "render":    ("deploy", "running a Render command"),
+    "ansible":            ("deploy", "running an Ansible playbook"),
+    "ansible-playbook":   ("deploy", "running an Ansible playbook"),
+    "twine":     ("publish", "publishing a Python package"),
+    "sendmail":  ("email", "sending email"),
+    "swaks":     ("email", "sending email"),
+    "mailx":     ("email", "sending email"),
+    "mutt":      ("email", "sending email"),
+    "msmtp":     ("email", "sending email"),
+    "scp":       ("ssh", "copying a file to a remote host"),
+    "rsync":     ("ssh", "syncing files (potentially to a remote)"),
+}
+
+
+_SUBCMD_SPLIT = _re.compile(r";|&&|\|\||\n")
+_ENV_VAR_TOKEN = _re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+
+
+def _first_token(sub: str) -> tuple[str, str] | None:
+    """Return ``(cmd, rest)`` for the first invocation in a sub-command, or
+    ``None`` if the sub-command is empty / a comment. Skips leading env-var
+    assignments (``FOO=bar cmd …``)."""
+    sub = sub.strip()
+    if not sub or sub.startswith("#"):
+        return None
+    # Take the LHS of a pipe — the right side is fed the output of the
+    # left, so it doesn't run independently with side effects relative to
+    # the first command.
+    if "|" in sub and not sub.lstrip().startswith("|"):
+        sub = sub.split("|", 1)[0].strip()
+    tokens = sub.split()
+    if not tokens:
+        return None
+    i = 0
+    while i < len(tokens) and _ENV_VAR_TOKEN.match(tokens[i]):
+        i += 1
+    if i >= len(tokens):
+        return None
+    return tokens[i], " ".join(tokens[i + 1:])
+
+
+def _detect_realworld_action(cmd: str) -> dict[str, str] | None:
+    """Return ``{category, description}`` for cmds with external side
+    effects; ``None`` for ordinary local work.
+
+    Walks each sub-command (split on ``;`` / ``&&`` / ``||`` / newline) and
+    checks the first invocation token against a small dispatcher. Discovery
+    commands like ``which wrangler`` short-circuit silently — the tool
+    name being mentioned isn't enough; it has to be the thing being run.
+    """
+    if not cmd:
+        return None
+    for sub in _SUBCMD_SPLIT.split(cmd):
+        token = _first_token(sub)
+        if token is None:
+            continue
+        cmd0, rest = token
+        if cmd0 in _DISCOVERY_CMDS:
+            continue
+        # Direct lookup for tools that are categorically side-effecting.
+        hit = _SIDE_EFFECTING_CMDS.get(cmd0)
+        if hit is not None:
+            return {"category": hit[0], "description": hit[1]}
+        # git — subcommand-sensitive
+        if cmd0 == "git":
+            if rest.startswith("push"):
+                return {"category": "git", "description": "pushing code to a remote"}
+            if rest.startswith(("pull", "fetch")):
+                return {"category": "git", "description": "pulling from a remote"}
+            if rest.startswith(("remote add", "remote set-url")):
+                return {"category": "git", "description": "configuring a git remote"}
+        # gh CLI
+        if cmd0 == "gh":
+            if rest.startswith("repo create"):
+                return {"category": "github", "description": "creating a GitHub repository"}
+            if rest.startswith("repo delete"):
+                return {"category": "github", "description": "deleting a GitHub repository"}
+            first = rest.split()[0] if rest else ""
+            if first in ("pr", "issue", "release", "gist", "workflow", "api"):
+                return {"category": "github", "description": "running a GitHub CLI command"}
+        # curl POST/PUT/DELETE to non-localhost
+        if cmd0 == "curl":
+            m = _re.search(r"-X\s*(POST|PUT|DELETE|PATCH)\b", rest, _re.IGNORECASE)
+            if m and not _re.search(r"\b(localhost|127\.0\.0\.1)\b", rest):
+                return {
+                    "category": "http",
+                    "description": "making an external POST/PUT/DELETE request",
+                }
+        # npm publish (but not npm install / npm run / npm test)
+        if cmd0 == "npm" and rest.startswith("publish"):
+            return {"category": "publish", "description": "publishing an npm package"}
+        # AWS / GCP CLIs — first sub-resource decides
+        if cmd0 == "aws":
+            first = rest.split()[0] if rest else ""
+            if first in ("s3", "cloudfront", "lambda", "ec2", "iam", "rds", "sqs", "sns"):
+                return {"category": "deploy", "description": f"running AWS {first} command"}
+        if cmd0 == "gcloud":
+            return {"category": "deploy", "description": "running gcloud command"}
+        # ssh to non-localhost
+        if cmd0 == "ssh" and rest:
+            args = rest.split()
+            # Skip flags
+            host = next((a for a in args if not a.startswith("-")), "")
+            if host and host not in ("localhost", "127.0.0.1"):
+                return {"category": "ssh", "description": "opening an SSH session to a host"}
+        # sudo / tee / mv into system paths
+        if cmd0 in ("sudo", "tee") and _re.search(
+            r"/etc/|/usr/|~/\.ssh/|/var/", rest
+        ):
+            return {"category": "system_write", "description": "writing to a system path"}
+        # Domain registrar CLIs (rare; safe to keep)
+        if cmd0 in ("namecheap", "godaddy", "porkbun"):
+            return {
+                "category": "domain",
+                "description": "querying or registering a domain",
+            }
+    return None
+
+
 def _parse_trust_tier_arg(args: dict[str, Any]) -> TrustTier | str:
     raw = args.get("trust_tier")
     if raw is None or raw == "":
@@ -158,6 +315,22 @@ def terminal_run(args: dict[str, Any], ctx: DroneContext) -> ToolResult:
             timeout_s=timeout,
             invocation_tool_name=invocation_tool_name,
         )
+        # Heuristic side-effect detection: if this command looks like it
+        # touches the world outside this machine (deploy, push, send mail,
+        # external POST, package publish, account create), emit a dedicated
+        # ``worker.realworld_action`` event so the operator gets a chat-rail
+        # heads-up the moment it happens — not when the drone exits, by
+        # which time a repo may already exist on GitHub. Zero LLM cost.
+        rwa = _detect_realworld_action(cmd)
+        if rwa is not None:
+            ctx.tape.emit(
+                "worker.realworld_action",
+                drone_id=ctx.drone_id,
+                gap_id=ctx.gap_id,
+                category=rwa["category"],
+                description=rwa["description"],
+                cmd=cmd[:200],
+            )
     tool_rec: Tool | None = None
     if invocation_tool_name is not None:
         if ctx.store is None or ctx.tool_store is None:
@@ -285,16 +458,23 @@ def cm_read_gap(args: dict[str, Any], ctx: DroneContext) -> ToolResult:
         "you will exit. Use kind='fail' if you cannot meet the criteria — the "
         "finding records why, the gap stays unfilled, and Gap Finding will "
         "decide on a later pass whether to decompose, retire, or create "
-        "adjacent work. Any other kind is a non-terminal note. Attach 'paths' "
-        "for any on-disk artefact (.md report, generated file, etc.) the "
-        "finding references — keep 'summary' short."
+        "adjacent work. Use kind='requires_user_action' when you're blocked "
+        "on a human action you cannot perform yourself — needing a "
+        "credential, an OAuth sign-in, an MFA code, a purchase approval, "
+        "etc. Provide a JSON artefact in 'paths' with at minimum "
+        "{action_type: credential|oauth|sign_in|purchase|approval|mfa, ...}; "
+        "the operator's UI uses this to render the block in the action "
+        "inbox. The gap stays unfilled until the user resolves the block; "
+        "you will exit. Any other kind is a non-terminal note. Attach "
+        "'paths' for any on-disk artefact (.md report, generated file, "
+        "etc.) the finding references — keep 'summary' short."
     ),
     {
         "type": "object",
         "properties": {
             "kind": {
                 "type": "string",
-                "description": "fill | fail | note | <other>",
+                "description": "fill | fail | requires_user_action | note | <other>",
             },
             "summary": {"type": "string"},
             "paths": {
@@ -302,7 +482,10 @@ def cm_read_gap(args: dict[str, Any], ctx: DroneContext) -> ToolResult:
                 "items": {"type": "string"},
                 "description": (
                     "Absolute paths to files this finding references. Other "
-                    "drones will read these directly."
+                    "drones will read these directly. For "
+                    "requires_user_action, include a JSON file describing "
+                    "the block (action_type, url, secret_name, amount_usd, "
+                    "reason, …)."
                 ),
             },
         },
@@ -352,6 +535,37 @@ def cm_write_finding(args: dict[str, Any], ctx: DroneContext) -> ToolResult:
         return ToolResult(
             content=(
                 f"finding recorded: {f.id}. Gap stays unfilled; Gap Finding will react."
+            ),
+            terminal_finding=f,
+            outcome="fail",
+        )
+    if kind == "requires_user_action":
+        # The drone is blocked on a human action. Persist the finding,
+        # leave the gap unfilled, and exit. The Mission Control UI shows
+        # the block in its Action Inbox; when the operator resolves it,
+        # they append a ``note`` finding referencing this block id, and
+        # Gap Finding re-dispatches next tick.
+        f = ctx.store.append_finding(
+            tick=ctx.tick,
+            author=FindingAuthor.worker,
+            kind=FindingKind.requires_user_action,
+            summary=summary,
+            affected_gap_ids=[ctx.gap_id],
+            artefact_paths=paths,
+        )
+        if ctx.tape is not None:
+            ctx.tape.emit(
+                "tool.write_finding",
+                drone_id=ctx.drone_id,
+                kind=kind,
+                finding_id=f.id,
+                paths=paths,
+            )
+        return ToolResult(
+            content=(
+                f"block recorded: {f.id}. Exiting — the operator will resolve "
+                "this in mission control; a future drone will pick the gap "
+                "back up once the unblock note lands."
             ),
             terminal_finding=f,
             outcome="fail",
@@ -439,6 +653,8 @@ def cm_write_finding(args: dict[str, Any], ctx: DroneContext) -> ToolResult:
     },
 )
 def cm_register_tool(args: dict[str, Any], ctx: DroneContext) -> ToolResult:
+    import os as _os
+
     name = str(args.get("name", "")).strip()
     if not name:
         return ToolResult(content="ERROR: tool name required")
@@ -454,6 +670,15 @@ def cm_register_tool(args: dict[str, Any], ctx: DroneContext) -> ToolResult:
     skill_path, skill_id = link
     nv_raw = args.get("needs_venv", False)
     needs_venv = nv_raw if isinstance(nv_raw, bool) else False
+    # Paranoid install mode (operator toggle in mission control): force
+    # newly-registered installed tools into trust_tier=low + alignment-
+    # flagged so cm_request_tool refuses to auto-activate them. The
+    # operator reviews via the action inbox + marketplace and raises trust
+    # explicitly.
+    paranoid = _os.environ.get("DRONE_GRAPH_PARANOID_INSTALL", "").strip() in (
+        "1", "true", "yes", "on",
+    )
+    effective_trust = TrustTier.low if paranoid else trust_or_err
     try:
         record = Tool(
             name=name,
@@ -467,7 +692,8 @@ def cm_register_tool(args: dict[str, Any], ctx: DroneContext) -> ToolResult:
             skill_package_path=skill_path,
             skill_package_id=skill_id,
             needs_venv=needs_venv,
-            trust_tier=trust_or_err,
+            trust_tier=effective_trust,
+            flagged_by_alignment=paranoid,
         )
         ctx.tool_store.register_installed(record)
     except (ValueError, KeyError, TypeError) as e:
@@ -478,6 +704,29 @@ def cm_register_tool(args: dict[str, Any], ctx: DroneContext) -> ToolResult:
             drone_id=ctx.drone_id,
             name=name,
             kind="installed",
+            paranoid=paranoid,
+        )
+    if paranoid:
+        # Non-terminal finding: drone keeps working. The block surfaces in
+        # the mission-control inbox; the operator either raises trust via
+        # the marketplace (making the tool available to future drones) or
+        # blocks it. Either way they then "mark done" in the inbox.
+        block = ctx.store.append_finding(
+            tick=ctx.tick,
+            author=FindingAuthor.worker,
+            kind=FindingKind.requires_user_action,
+            summary=(
+                f"Operator approval required to raise trust on installed tool "
+                f"{name!r}. Registered at trust_tier=low pending review."
+            ),
+            affected_gap_ids=[ctx.gap_id],
+            artefact_paths=[],
+        )
+        return ToolResult(
+            content=(
+                f"registered tool {name!r} at trust_tier=low (paranoid mode). "
+                f"Operator approval required to raise trust (inbox finding {block.id})."
+            ),
         )
     return ToolResult(
         content=f"registered tool {name!r}. Future drones can discover it via cm_list_tools.",

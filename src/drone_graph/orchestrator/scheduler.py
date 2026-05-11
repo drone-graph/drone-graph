@@ -39,6 +39,7 @@ from drone_graph.drones import (
     resolve_orchestrator_provider_model,
 )
 from drone_graph.gaps import FindingAuthor, Gap, GapStore
+from drone_graph.model_registry.registry import ModelRegistry
 from drone_graph.orchestrator.bootstrap import (
     PRESET_ALIGNMENT,
     PRESET_GAP_FINDING,
@@ -64,6 +65,10 @@ DEFAULT_TARGET_LEAVES = 5
 HARDKILL_GRACE_S = 90.0       # 3.4 will use this for cancelled workers
 SOFTKILL_GRACE_S = 5.0
 NOOP_STREAK_TO_STOP = 3
+# When ``control.infinite_mode`` is on, the scheduler downshifts to this tick
+# cadence once the swarm goes idle (3 GF noops, no work pending). Wakes back
+# up on the next user_input finding or any structural change.
+RESTING_TICK_S = 8.0
 
 # Maps runner exit codes back to the textual outcome the scheduler logs.
 _EXIT_TO_OUTCOME: dict[int, str] = {
@@ -88,6 +93,13 @@ class _Process:
     spawned_at: float
     cancel_signaled_at: float | None = None
     findings_before: int = 0    # snapshot of total findings count at spawn
+    # Per-drone routing — what the scheduler actually invoked, not the
+    # operator's static default. Workers route by gap tier; presets pin to
+    # the advanced tier. Surface this so the UI can show the real model
+    # being charged per drone.
+    provider: str = ""
+    model: str = ""
+    model_tier: str = ""
 
 
 @dataclass
@@ -127,6 +139,8 @@ class Scheduler:
         signal_db: Path | None = None,
         scenario_events: list[dict[str, Any]] | None = None,
         cost_ceiling_usd: float | None = None,
+        control: Any | None = None,
+        tier_overrides: dict[str, dict[str, str]] | None = None,
     ) -> None:
         self.substrate = substrate
         self.signals = signals
@@ -147,6 +161,11 @@ class Scheduler:
         self.tape_dir.mkdir(parents=True, exist_ok=True)
         self.pending_events = list(scenario_events or [])
         self.cost_ceiling_usd = cost_ceiling_usd
+        # When ``control`` is set, the mission-control API owns pause/resume,
+        # cost-ceiling and infinite-mode for this scheduler. ``control`` is a
+        # ``drone_graph.api.control.SchedulerControl`` but we keep the type
+        # loose so the scheduler doesn't import the API package.
+        self.control = control
 
         self.preset_slot: _Process | None = None
         self.workers: dict[str, _Process] = {}   # gap_id -> _Process
@@ -154,6 +173,18 @@ class Scheduler:
         self.tick = 0
         self.counters = _Counters()
         self.stop_reason = ""
+        # Model registry — used to resolve per-gap (provider, model) from
+        # ``gap.model_tier`` for *workers*, plus to pin presets to the
+        # ``frontier`` tier of the operator's selected provider.
+        # ``tier_overrides`` (from Settings) takes precedence over the
+        # registry's tier_defaults_by_provider.
+        try:
+            self._registry: ModelRegistry | None = ModelRegistry.load_auto()
+            if not self._registry.is_populated:
+                self._registry = None
+        except Exception:
+            self._registry = None
+        self._tier_overrides = dict(tier_overrides or {})
 
     # ---- Top-level run ----------------------------------------------------
 
@@ -164,7 +195,7 @@ class Scheduler:
                 self._tick()
                 if self._should_stop():
                     break
-                time.sleep(self.tick_s)
+                self._sleep_until_next_tick(self._effective_tick_s())
         finally:
             self._drain_inflight()
             self._emit(
@@ -185,33 +216,81 @@ class Scheduler:
         self._signal_cancellations()
         self._hard_kill_overdue()
         self._inject_pending_events()
+        if self._is_externally_paused():
+            return
         if not self._budget_blown():
             self._maybe_spawn_preset()
             self._maybe_spawn_workers()
 
+    def _is_externally_paused(self) -> bool:
+        return bool(self.control is not None and getattr(self.control, "is_paused", False))
+
+    def _effective_tick_s(self) -> float:
+        """Slow tick when the controller asks for a different cadence (e.g.
+        ``RESTING_TICK_S`` while the swarm is idle in infinite mode). Falls
+        back to ``self.tick_s`` if no controller is wired."""
+        if self.control is None:
+            return self.tick_s
+        external = getattr(self.control, "tick_s", None)
+        if external is None:
+            return self.tick_s
+        return float(external)
+
+    def _sleep_until_next_tick(self, seconds: float) -> None:
+        """Interruptible sleep. When wired to a controller, an operator
+        force-tick / settings change wakes the loop instead of waiting out
+        the full resting cadence."""
+        if self.control is not None and hasattr(self.control, "sleep_for"):
+            self.control.sleep_for(seconds)
+            return
+        time.sleep(seconds)
+
     def _budget_blown(self) -> bool:
-        if self.cost_ceiling_usd is None:
+        ceiling = self._effective_ceiling()
+        if ceiling is None:
             return False
-        return self.signals.spent(self.run_id) >= self.cost_ceiling_usd
+        return self.signals.spent(self.run_id) >= ceiling
+
+    def _effective_ceiling(self) -> float | None:
+        """Prefer the controller's mutable ceiling over the construction-time
+        value so the API can adjust it live."""
+        if self.control is not None:
+            ceiling = getattr(self.control, "cost_ceiling_usd", None)
+            if ceiling is not None:
+                return float(ceiling)
+        return self.cost_ceiling_usd
 
     def _check_cost_ceiling(self) -> None:
         if not self._budget_blown():
             return
-        if self.stop_reason:
-            return
         spent = self.signals.spent(self.run_id)
-        self._emit(
-            "scheduler.budget_exceeded",
-            spent_usd=round(spent, 4),
-            ceiling_usd=self.cost_ceiling_usd,
-        )
+        ceiling = self._effective_ceiling()
+        # Cancel in-flight regardless of mode.
         for proc in self._all_inflight():
             if proc.cancel_signaled_at is None:
                 self.signals.signal_cancel("gap", proc.gap_id)
                 proc.cancel_signaled_at = time.time()
+        # In externally-controlled (infinite) mode, don't stop — just pause
+        # the swarm so the operator can raise the ceiling or resume.
+        if self.control is not None and getattr(self.control, "infinite_mode", False):
+            if not getattr(self.control, "is_paused", False):
+                self._emit(
+                    "scheduler.cost_locked",
+                    spent_usd=round(spent, 4),
+                    ceiling_usd=ceiling,
+                )
+                self.control.pause()
+            return
+        if self.stop_reason:
+            return
+        self._emit(
+            "scheduler.budget_exceeded",
+            spent_usd=round(spent, 4),
+            ceiling_usd=ceiling,
+        )
         self.stop_reason = (
             f"swarm cost ceiling reached "
-            f"(${spent:.3f} >= ${self.cost_ceiling_usd:.3f})"
+            f"(${spent:.3f} >= ${(ceiling or 0):.3f})"
         )
 
     # ---- Reaping ----------------------------------------------------------
@@ -359,7 +438,23 @@ class Scheduler:
     def _maybe_spawn_preset(self) -> None:
         if self.preset_slot is not None:
             return
-        if self.counters.gf_count >= self.max_gf:
+        # Operator force-tick wins over cadence.
+        forced = None
+        if self.control is not None and hasattr(self.control, "take_force_role"):
+            forced = self.control.take_force_role()
+        if forced == "alignment":
+            self._spawn_preset(PRESET_ALIGNMENT, role="preset:alignment")
+            self.counters.last_alignment_gf = self.counters.gf_count
+            return
+        if forced == "gap_finding":
+            self._spawn_preset(PRESET_GAP_FINDING, role="preset:gap_finding")
+            return
+        # In infinite mode we don't honor the max_gf bailout — the operator
+        # tunes ceilings, not iteration count.
+        if (
+            (self.control is None or not getattr(self.control, "infinite_mode", False))
+            and self.counters.gf_count >= self.max_gf
+        ):
             return
         if self._alignment_due():
             self._spawn_preset(PRESET_ALIGNMENT, role="preset:alignment")
@@ -425,13 +520,47 @@ class Scheduler:
     def _spawn(self, *, gap: Gap, role: str, max_turns: int) -> _Process:
         drone_id = str(uuid4())
         tape_path = self.tape_dir / f"{drone_id}.jsonl"
+        # Tier routing.
+        # - Workers: resolve gap.model_tier within the operator's provider
+        #   (with overrides), so cheap gaps go to nano/mini and hard gaps
+        #   go to advanced/frontier.
+        # - Presets (GF, Alignment): always frontier of operator's provider —
+        #   these are persistent and structural, worth the cost.
+        # On any failure, fall back to the scheduler default (provider, model).
+        worker_provider = self.provider
+        worker_model = self.model
+        if self._registry is not None:
+            try:
+                if role == "worker":
+                    entry = self._registry.resolve_for_gap(
+                        gap,
+                        self.provider,
+                        overrides=self._tier_overrides or None,
+                    )
+                else:
+                    # Presets pin to ``advanced`` tier (a strong-but-not-
+                    # flagship model — e.g. Sonnet on Anthropic, GPT-5-4 on
+                    # OpenAI). Frontier-tier presets (Opus) burned cost
+                    # disproportionately during structural steering, which
+                    # is the wrong gold-plate for the operator default.
+                    # Override the preset tier per-provider in Settings →
+                    # tier overrides if you want flagship structural work.
+                    from drone_graph.gaps.records import ModelTier as _MT
+                    entry = self._registry.resolve_for_tier(
+                        _MT.advanced,
+                        self.provider,
+                    )
+                worker_provider = entry.provider
+                worker_model = entry.vendor_model_id
+            except Exception:
+                pass
         cmd = [
             sys.executable,
             "-m",
             "drone_graph.drones.runner",
             "--gap-id", gap.id,
-            "--provider", self.provider.value,
-            "--model", self.model,
+            "--provider", worker_provider.value,
+            "--model", worker_model,
             "--max-turns", str(max_turns),
             "--tick", str(self.tick),
             "--tape-path", str(tape_path),
@@ -454,6 +583,9 @@ class Scheduler:
             tick=self.tick,
             pid=proc.pid,
             tape=str(tape_path),
+            provider=worker_provider.value,
+            model=worker_model,
+            model_tier=gap.model_tier.value,
         )
         return _Process(
             role=role,
@@ -463,6 +595,9 @@ class Scheduler:
             proc=proc,
             spawned_at=spawned_at,
             findings_before=len(self.store.all_findings()),
+            provider=worker_provider.value,
+            model=worker_model,
+            model_tier=gap.model_tier.value,
         )
 
     def _drain_inflight(self) -> None:
@@ -504,6 +639,15 @@ class Scheduler:
     def _should_stop(self) -> bool:
         if self.stop_reason:
             return True
+        # Externally-driven mission-control scheduler: the only way out is the
+        # operator requesting stop. The legacy noop-streak and max-gf bailouts
+        # are infinite-mode antipatterns — there's no "end state" in that mode.
+        if self.control is not None and getattr(self.control, "stop_requested", False):
+            self.stop_reason = "stop requested by controller"
+            return True
+        if self.control is not None and getattr(self.control, "infinite_mode", False):
+            self._maybe_downshift_tick()
+            return False
         if self.counters.consecutive_gf_errors >= 3:
             self.stop_reason = "3 consecutive gap finding errors"
             return True
@@ -526,6 +670,24 @@ class Scheduler:
             )
             return True
         return False
+
+    def _maybe_downshift_tick(self) -> None:
+        """In infinite mode, slow the tick when the swarm has nothing to do —
+        and snap back to active cadence the moment work or input lands."""
+        if self.control is None:
+            return
+        resting = (
+            self.counters.consecutive_noops >= NOOP_STREAK_TO_STOP
+            and not self.workers
+            and self.preset_slot is None
+            and not self.pending_events
+            and self._pick_next_worker_target() is None
+        )
+        target = RESTING_TICK_S if resting else self.tick_s
+        current = getattr(self.control, "tick_s", target)
+        if abs(current - target) > 1e-3 and hasattr(self.control, "set_tick_s"):
+            self.control.set_tick_s(target)
+            self._emit("scheduler.tick_cadence", tick_s=target, resting=resting)
 
     # ---- Tape -------------------------------------------------------------
 

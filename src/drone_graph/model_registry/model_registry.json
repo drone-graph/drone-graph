@@ -1,8 +1,19 @@
 {
-  "tier_defaults": {
-    "cheap": "dgraph-openai-gpt-4o-mini",
-    "standard": "dgraph-openai-gpt-4o",
-    "frontier": "dgraph-anthropic-claude-sonnet-4-6"
+  "tier_defaults_by_provider": {
+    "anthropic": {
+      "nano": "dgraph-anthropic-claude-haiku-4-5-20251001",
+      "mini": "dgraph-anthropic-claude-haiku-4-5-20251001",
+      "standard": "dgraph-anthropic-claude-sonnet-4-6",
+      "advanced": "dgraph-anthropic-claude-sonnet-4-6",
+      "frontier": "dgraph-anthropic-claude-opus-4-7"
+    },
+    "openai": {
+      "nano": "dgraph-openai-gpt-5-4-nano",
+      "mini": "dgraph-openai-gpt-5-4-mini",
+      "standard": "dgraph-openai-gpt-5-4",
+      "advanced": "dgraph-openai-gpt-5-4",
+      "frontier": "dgraph-openai-gpt-5-4-pro"
+    }
   },
   "models": [
     {

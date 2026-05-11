@@ -540,92 +540,121 @@ def _anthropic_frontier_vendor(aset: set[str]) -> str | None:
     return sorted(aset)[-1] if aset else None
 
 
+_OPENAI_TIER_PREFERENCES: dict[ModelTier, tuple[str, ...]] = {
+    ModelTier.nano: (
+        "gpt-5-4-nano",
+        "gpt-5-nano",
+        "gpt-4.1-nano",
+        "gpt-4o-mini",
+    ),
+    ModelTier.mini: (
+        "gpt-5-4-mini",
+        "gpt-5-mini",
+        "gpt-4o-mini",
+        "gpt-4.1-mini",
+        "gpt-4o",
+    ),
+    ModelTier.standard: (
+        "gpt-5-4",
+        "gpt-5",
+        "gpt-4o",
+        "gpt-4.1",
+        "gpt-4-turbo",
+        "gpt-4",
+    ),
+    ModelTier.advanced: (
+        "gpt-5-4",
+        "gpt-5-3-codex",
+        "gpt-5",
+        "o3",
+        "o1",
+        "gpt-4o",
+    ),
+    ModelTier.frontier: (
+        "gpt-5-4-pro",
+        "gpt-5-pro",
+        "o1-pro",
+        "gpt-5",
+        "gpt-4o",
+    ),
+}
+
+_ANTHROPIC_TIER_PREFERENCES: dict[ModelTier, tuple[str, ...]] = {
+    ModelTier.nano: (
+        "claude-haiku-4-5-20251001",
+        "claude-3-5-haiku-20241022",
+    ),
+    ModelTier.mini: (
+        "claude-haiku-4-5-20251001",
+        "claude-3-5-haiku-20241022",
+        "claude-3-5-sonnet-20241022",
+    ),
+    ModelTier.standard: (
+        "claude-sonnet-4-6",
+        "claude-sonnet-4-5-20250929",
+        "claude-3-5-sonnet-20241022",
+    ),
+    ModelTier.advanced: (
+        "claude-sonnet-4-6",
+        "claude-opus-4-7",
+        "claude-3-5-sonnet-20241022",
+    ),
+    ModelTier.frontier: (
+        "claude-opus-4-7",
+        "claude-opus-4-6",
+        "claude-opus-4-5-20251101",
+        "claude-opus-4-1-20250805",
+    ),
+}
+
+
+def _ladder_for(
+    provider: Provider,
+    vendor_ids: set[str],
+    prefs: dict[ModelTier, tuple[str, ...]],
+) -> dict[ModelTier, str] | None:
+    """Pick one vendor_model_id per tier from a preference list, falling
+    back to alphabetical-by-id when nothing matches. Returns ``None`` if
+    the provider has no models at all."""
+    if not vendor_ids:
+        return None
+    sorted_ids = sorted(vendor_ids)
+    ladder: dict[ModelTier, str] = {}
+    for tier, candidates in prefs.items():
+        picked = _pick_first_vendor(candidates, vendor_ids=vendor_ids)
+        if picked is None:
+            # Last-resort fallback to keep the ladder complete — picks a
+            # progressively-later id for higher tiers.
+            tier_index = list(prefs.keys()).index(tier)
+            picked = sorted_ids[min(tier_index, len(sorted_ids) - 1)]
+        ladder[tier] = dgraph_model_id(provider, picked)
+    return ladder
+
+
 def select_tier_defaults(
     *,
     openai_vendor_ids: list[str],
     anthropic_vendor_ids: list[str],
-) -> dict[ModelTier, str]:
-    oset = set(openai_vendor_ids)
-    aset = set(anthropic_vendor_ids)
-
-    cheap_openai = _pick_first_vendor(
-        (
-            "gpt-4o-mini",
-            "gpt-4.1-nano",
-        ),
-        vendor_ids=oset,
+) -> dict[Provider, dict[ModelTier, str]]:
+    """Build a ``tier_defaults_by_provider`` map. Each provider with vendor
+    ids gets a complete 5-tier ladder. Repetition across tiers is allowed
+    when a provider doesn't have enough distinct models — operators can
+    override any tier in Settings."""
+    out: dict[Provider, dict[ModelTier, str]] = {}
+    o_ladder = _ladder_for(Provider.openai, set(openai_vendor_ids), _OPENAI_TIER_PREFERENCES)
+    if o_ladder is not None:
+        out[Provider.openai] = o_ladder
+    a_ladder = _ladder_for(
+        Provider.anthropic, set(anthropic_vendor_ids), _ANTHROPIC_TIER_PREFERENCES
     )
-    if cheap_openai is None and oset:
-        cheap_openai = sorted(oset)[0]
-
-    standard_openai = _pick_first_vendor(
-        (
-            "gpt-4o",
-            "gpt-4.1",
-            "gpt-4-turbo",
-            "gpt-4-turbo-preview",
-            "gpt-4",
-        ),
-        vendor_ids=oset,
-    )
-    if standard_openai is None and oset:
-        for vid in sorted(oset):
-            if vid != cheap_openai:
-                standard_openai = vid
-                break
-        if standard_openai is None:
-            standard_openai = cheap_openai
-
-    frontier_anthropic = _anthropic_frontier_vendor(aset)
-    frontier_openai = _pick_first_vendor(
-        ("gpt-4o", "o3", "o1", "gpt-4-turbo"),
-        vendor_ids=oset,
-    )
-    if frontier_openai is None and oset:
-        frontier_openai = sorted(oset)[-1]
-
-    cheap_vendor: str | None = None
-    cheap_provider: Provider = Provider.openai
-    if cheap_openai is not None:
-        cheap_vendor, cheap_provider = cheap_openai, Provider.openai
-    elif aset:
-        cheap_vendor = _anthropic_cheap_vendor(aset)
-        cheap_provider = Provider.anthropic
-
-    standard_vendor: str | None = None
-    standard_provider: Provider = Provider.openai
-    if standard_openai is not None:
-        standard_vendor, standard_provider = standard_openai, Provider.openai
-    elif aset:
-        standard_vendor = _anthropic_standard_vendor(aset, avoid=cheap_vendor)
-        standard_provider = Provider.anthropic
-
-    frontier_vendor: str | None = None
-    frontier_provider: Provider = Provider.openai
-    if frontier_anthropic is not None:
-        frontier_vendor, frontier_provider = frontier_anthropic, Provider.anthropic
-    elif frontier_openai is not None:
-        frontier_vendor, frontier_provider = frontier_openai, Provider.openai
-
-    missing: list[str] = []
-    if cheap_vendor is None:
-        missing.append("cheap (no models)")
-    if standard_vendor is None:
-        missing.append("standard (no models)")
-    if frontier_vendor is None:
-        missing.append("frontier (no models)")
-
-    if missing:
-        msg = "Cannot derive tier_defaults: " + "; ".join(missing)
-        raise ValueError(msg)
-
-    assert cheap_vendor is not None and standard_vendor is not None and frontier_vendor is not None
-
-    return {
-        ModelTier.cheap: dgraph_model_id(cheap_provider, cheap_vendor),
-        ModelTier.standard: dgraph_model_id(standard_provider, standard_vendor),
-        ModelTier.frontier: dgraph_model_id(frontier_provider, frontier_vendor),
-    }
+    if a_ladder is not None:
+        out[Provider.anthropic] = a_ladder
+    if not out:
+        raise ValueError(
+            "Cannot derive tier_defaults_by_provider: no vendor models for "
+            "either provider."
+        )
+    return out
 
 
 def build_registry_file(
@@ -662,11 +691,14 @@ def build_registry_file(
         openai_vendor_ids=o_ids,
         anthropic_vendor_ids=[i.id for i in a_infos],
     )
-    return ModelRegistryFile(tier_defaults=tier_defaults, models=models)
+    return ModelRegistryFile(
+        tier_defaults_by_provider=tier_defaults, models=models
+    )
 
 
 def finalize_registry(models: list[ModelRegistryEntry]) -> ModelRegistryFile:
-    """Sort models and recompute tier_defaults (non-deprecated set only)."""
+    """Sort models and recompute the per-provider tier ladders (non-deprecated
+    set only)."""
     if not models:
         msg = "No models remain after doc enrichment"
         raise ValueError(msg)
@@ -674,7 +706,9 @@ def finalize_registry(models: list[ModelRegistryEntry]) -> ModelRegistryFile:
     o_ids = sorted({m.vendor_model_id for m in models_sorted if m.provider == Provider.openai})
     a_ids = sorted({m.vendor_model_id for m in models_sorted if m.provider == Provider.anthropic})
     tier_defaults = select_tier_defaults(openai_vendor_ids=o_ids, anthropic_vendor_ids=a_ids)
-    return ModelRegistryFile(tier_defaults=tier_defaults, models=models_sorted)
+    return ModelRegistryFile(
+        tier_defaults_by_provider=tier_defaults, models=models_sorted
+    )
 
 
 def _write_registry_snapshot(output: Path, models: list[ModelRegistryEntry]) -> None:

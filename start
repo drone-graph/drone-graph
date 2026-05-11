@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+#
+# Mission Control launcher.
+#
+# Usage:   ./start            # default: serve on 127.0.0.1:8765
+#          ./start --port N   # any extra flags get passed straight to
+#                             # `drone-graph serve`
+#
+# On first run, detects what's missing (venv, Python deps) and prompts once
+# before installing. Subsequent runs go straight to serving.
+# `drone-graph serve` itself handles frontend build + Neo4j bringup.
+
+set -euo pipefail
+cd "$(dirname "$0")"
+
+VENV=".venv"
+NEEDS_VENV=0
+NEEDS_INSTALL=0
+PY=""
+
+# Pick a python to bootstrap the venv with.
+for cand in python3.12 python3.13 python3; do
+  if command -v "$cand" >/dev/null 2>&1; then
+    PY="$cand"
+    break
+  fi
+done
+if [ -z "$PY" ]; then
+  echo "[start] no python3 on PATH — install Python 3.12+ first." >&2
+  exit 1
+fi
+
+if [ ! -d "$VENV" ]; then
+  NEEDS_VENV=1
+  NEEDS_INSTALL=1
+fi
+
+# Even with a venv, the editable install may not be there (e.g. fresh clone
+# with someone else's venv mounted, or after a clean).
+if [ "$NEEDS_VENV" = "0" ] && ! "$VENV/bin/python" -c "import drone_graph.api" 2>/dev/null; then
+  NEEDS_INSTALL=1
+fi
+
+if [ "$NEEDS_VENV" = "1" ] || [ "$NEEDS_INSTALL" = "1" ]; then
+  echo "[start] First-time setup is needed before Mission Control can run:"
+  [ "$NEEDS_VENV" = "1" ]    && echo "    · create Python virtual env at ./$VENV  (using $PY)"
+  [ "$NEEDS_INSTALL" = "1" ] && echo "    · pip install -e .                       (drone-graph + deps, ~30s)"
+  echo ""
+  printf "Proceed? [Y/n] "
+  read -r reply || reply=""
+  reply="${reply:-Y}"
+  case "$reply" in
+    [Yy]*) ;;
+    *)
+      echo "[start] aborted."
+      exit 1
+      ;;
+  esac
+
+  if [ "$NEEDS_VENV" = "1" ]; then
+    echo "[start] creating venv with $PY…"
+    "$PY" -m venv "$VENV"
+  fi
+  if [ "$NEEDS_INSTALL" = "1" ]; then
+    echo "[start] installing drone-graph (this is the slow step)…"
+    "$VENV/bin/pip" install --quiet --upgrade pip
+    "$VENV/bin/pip" install --quiet -e .
+  fi
+  echo "[start] setup complete."
+  echo ""
+fi
+
+exec "$VENV/bin/drone-graph" serve "$@"

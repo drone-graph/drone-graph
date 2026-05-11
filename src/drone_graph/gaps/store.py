@@ -184,6 +184,7 @@ class GapStore:
                 criteria=c["criteria"],
                 tool_loadout=list(c.get("tool_loadout", []) or []),
                 tool_suggestions=list(c.get("tool_suggestions", []) or []),
+                reasoning_effort=(c.get("reasoning_effort") or None),
             )
             for c in children
             if c["intent"].strip().lower() not in existing_intents_lc
@@ -210,7 +211,8 @@ class GapStore:
             "  model_tier: $standard, created_at: datetime(child.created_at), "
             "  tool_loadout: child.tool_loadout, "
             "  tool_suggestions: child.tool_suggestions, "
-            "  context_preload: [], preset_kind: null "
+            "  context_preload: [], preset_kind: null, "
+            "  reasoning_effort: child.reasoning_effort "
             "}) "
             "CREATE (p)-[:PARENT_OF]->(c) "
             "WITH p, collect(c.id) AS child_ids "
@@ -240,6 +242,7 @@ class GapStore:
                     "created_at": c.created_at.isoformat(),
                     "tool_loadout": list(c.tool_loadout),
                     "tool_suggestions": list(c.tool_suggestions),
+                    "reasoning_effort": c.reasoning_effort,
                 }
                 for c in child_records
             ],
@@ -267,6 +270,7 @@ class GapStore:
         tier: ModelTier = ModelTier.standard,
         tool_loadout: list[str] | None = None,
         tool_suggestions: list[str] | None = None,
+        reasoning_effort: str | None = None,
     ) -> Finding:
         new_gap = Gap(
             intent=intent,
@@ -274,6 +278,7 @@ class GapStore:
             model_tier=tier,
             tool_loadout=list(tool_loadout or []),
             tool_suggestions=list(tool_suggestions or []),
+            reasoning_effort=reasoning_effort,
         )
         finding = Finding(
             tick=tick,
@@ -288,7 +293,8 @@ class GapStore:
             "  status: $unfilled, reopen_count: 0, retire_reason: null, "
             "  model_tier: $tier, created_at: datetime($created_at), "
             "  tool_loadout: $tool_loadout, tool_suggestions: $tool_suggestions, "
-            "  context_preload: [], preset_kind: null "
+            "  context_preload: [], preset_kind: null, "
+            "  reasoning_effort: $reasoning_effort "
             "}) "
             "CREATE (f:Finding { "
             "  id: $finding_id, tick: $tick, author: $author, kind: $kind, "
@@ -307,6 +313,7 @@ class GapStore:
             created_at=new_gap.created_at.isoformat(),
             tool_loadout=list(new_gap.tool_loadout),
             tool_suggestions=list(new_gap.tool_suggestions),
+            reasoning_effort=new_gap.reasoning_effort,
             finding_id=finding.id,
             tick=tick,
             author=author.value,
@@ -635,7 +642,8 @@ class GapStore:
             "  status: $status, reopen_count: 0, retire_reason: null, "
             "  model_tier: $tier, created_at: datetime($created_at), "
             "  tool_loadout: $tool_loadout, tool_suggestions: $tool_suggestions, "
-            "  context_preload: [], preset_kind: null "
+            "  context_preload: [], preset_kind: null, "
+            "  reasoning_effort: $reasoning_effort "
             "})",
             id=gap.id,
             intent=gap.intent,
@@ -645,6 +653,7 @@ class GapStore:
             created_at=gap.created_at.isoformat(),
             tool_loadout=list(gap.tool_loadout),
             tool_suggestions=list(gap.tool_suggestions),
+            reasoning_effort=gap.reasoning_effort,
         )
         return gap
 
@@ -658,6 +667,7 @@ class GapStore:
         tool_suggestions: list[str] | None = None,
         context_preload: list[str] | None = None,
         tier: ModelTier = ModelTier.standard,
+        reasoning_effort: str | None = None,
     ) -> Gap:
         """Idempotently create-or-update a preset gap with stable id ``preset:<kind>``.
 

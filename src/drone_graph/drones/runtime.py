@@ -18,11 +18,82 @@ the gap's intent text and tool loadout.
 from __future__ import annotations
 
 import json
+import os
 import threading
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
+
+
+def _llm_payload_logging_enabled() -> bool:
+    """Truthy ``DRONE_GRAPH_LOG_LLM_PAYLOADS`` env var → log full prompts +
+    responses to the drone tape on each turn. Off by default."""
+    v = os.environ.get("DRONE_GRAPH_LOG_LLM_PAYLOADS", "").strip().lower()
+    return v in ("1", "true", "yes", "on")
+
+
+_NARRATION_SYSTEM = (
+    "You narrate drone activity to an operator running a swarm. Your output "
+    "appears in the operator's chat panel as a message from the drone. Write "
+    "1–2 plain English sentences directed at the operator, first person from "
+    "the drone (\"I…\"). Lead with any real-world action the drone took "
+    "(deploying, pushing to a remote, registering, sending) — these are the "
+    "things the operator needs to know happened. If the drone is blocked on a "
+    "human action, say what's needed. No technical jargon, no markdown, no "
+    "preamble. Just the sentence(s)."
+)
+
+
+def _narrate_drone_exit(
+    *,
+    gap: Gap,
+    terminal_finding: Finding,
+    outcome: str | None,
+    provider: Provider,
+) -> str | None:
+    """Produce a 1–2 sentence chat-rail narration of what this drone did or
+    is asking for. Returns ``None`` on any failure — narration is
+    observability, not correctness; we never let it break a drone exit.
+
+    Uses the operator's provider with the ``nano`` tier model so cost is
+    bounded to a few cents per swarm session even at high drone counts.
+    """
+    try:
+        from drone_graph.gaps.records import ModelTier
+        from drone_graph.model_registry.registry import ModelRegistry
+
+        reg = ModelRegistry.load_auto()
+        if not reg.is_populated:
+            return None
+        entry = reg.resolve_for_tier(ModelTier.nano, provider)
+        narrator = make_client(entry.provider, entry.vendor_model_id)
+
+        # Trim long finding summaries so we don't pay to narrate 200-line dumps.
+        # The model only needs the gist — the operator can click through for
+        # the full thing.
+        summary = terminal_finding.summary[:2000]
+        intent_short = gap.intent[:400]
+        outcome_label = outcome or terminal_finding.kind.value
+        user_msg = (
+            f"Gap the drone was working on:\n{intent_short}\n\n"
+            f"Drone outcome: {outcome_label}.\n"
+            f"Drone's own finding summary:\n{summary}\n\n"
+            f"Write 1–2 sentences for the operator's chat panel."
+        )
+        resp = narrator.chat(
+            system=_NARRATION_SYSTEM,
+            messages=[{"role": "user", "content": user_msg}],
+            tools=[],
+        )
+        text = (resp.text or "").strip()
+        # Strip leading quotes/markdown artefacts some small models add.
+        for prefix in ('"', "'", "**", "- "):
+            if text.startswith(prefix):
+                text = text[len(prefix):].lstrip()
+        return text or None
+    except Exception:
+        return None
 
 if TYPE_CHECKING:
     from drone_graph.orchestrator.tape import EventTape as EventTape
@@ -33,6 +104,7 @@ from drone_graph.drones.providers import (
     ToolCall,
     Usage,
     cost_usd,
+    make_client,
 )
 from drone_graph.gaps import Finding, Gap, GapStore
 from drone_graph.gaps.records import FindingAuthor, FindingKind
@@ -380,6 +452,24 @@ def run_drone(
                         )
                     break
             tool_defs = _render_tool_defs(ctx.active_tool_names)
+            # Opt-in: when DRONE_GRAPH_LOG_LLM_PAYLOADS is truthy, write the
+            # full request/response (system prompt, full messages, full
+            # tools, assistant text + tool calls) to the drone tape. Off by
+            # default — payloads are voluminous (10–100KB per turn) and not
+            # always wanted. Set the env var when you need to debug GF /
+            # Alignment behavior or audit what a worker actually saw.
+            log_llm = _llm_payload_logging_enabled()
+            if log_llm and tape is not None:
+                tape.emit(
+                    "llm.request",
+                    drone_id=drone_id,
+                    turn=turns_used,
+                    provider=client.provider.value,
+                    model=client.model,
+                    system=system,
+                    messages=messages,
+                    tools=tool_defs,
+                )
             try:
                 resp = client.chat(system=system, messages=messages, tools=tool_defs)
             except Exception as e:  # noqa: BLE001 - bubble client errors up as drone error
@@ -405,6 +495,19 @@ def run_drone(
                     cost_usd=turn_cost,
                     tool_calls=[tc.name for tc in resp.tool_calls],
                 )
+                if log_llm:
+                    tape.emit(
+                        "llm.response",
+                        drone_id=drone_id,
+                        turn=turns_used,
+                        text=resp.text,
+                        tool_calls=[
+                            {"name": tc.name, "input": tc.input}
+                            for tc in resp.tool_calls
+                        ],
+                        stop_reason=resp.stop_reason,
+                        raw_assistant_content=resp.raw_assistant_content,
+                    )
 
             if ceiling_crossed:
                 be = store.append_finding(
@@ -513,6 +616,27 @@ def run_drone(
         usage=usage_total,
         cost=total_cost,
     )
+
+    # Best-effort chat-rail narration. For emergent (worker) drones that
+    # produced a terminal finding, ask a cheap (``nano`` tier) model to
+    # write 1–2 plain-English sentences for the operator. Skipped silently
+    # on any error — narration is observability, not correctness.
+    if tape is not None and not is_preset and terminal_finding is not None:
+        narration = _narrate_drone_exit(
+            gap=gap,
+            terminal_finding=terminal_finding,
+            outcome=outcome,
+            provider=client.provider,
+        )
+        if narration:
+            tape.emit(
+                "drone.narrate",
+                drone_id=drone_id,
+                gap_id=gap.id,
+                outcome=outcome,
+                text=narration,
+                finding_id=terminal_finding.id,
+            )
 
     if tape is not None:
         tape.emit(
