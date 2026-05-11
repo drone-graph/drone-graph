@@ -1,4 +1,4 @@
-import { For, Show, createMemo, createSignal, onMount } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal, onMount } from "solid-js";
 
 import { api } from "../api";
 import { playSound, unlockAudio } from "../sound";
@@ -28,6 +28,19 @@ export function ChatRail() {
 
   onMount(() => {
     setTimeout(() => scrollRef?.scrollTo(0, scrollRef.scrollHeight), 50);
+  });
+
+  // Auto-scroll to bottom when new messages arrive — but only if the
+  // operator was already near the bottom. If they've scrolled up to
+  // re-read history, don't yank them back to the tail.
+  createEffect(() => {
+    void store.chat.length; // dep
+    if (!scrollRef) return;
+    const dist = scrollRef.scrollHeight - scrollRef.scrollTop - scrollRef.clientHeight;
+    if (dist < 80) {
+      // Wait a frame for the new message to render then scroll.
+      setTimeout(() => scrollRef?.scrollTo(0, scrollRef.scrollHeight), 30);
+    }
   });
 
   const resolutions = createMemo(() => inboxResolutions());

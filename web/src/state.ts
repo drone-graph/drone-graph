@@ -222,8 +222,42 @@ export function applySnapshot(s: Snapshot): void {
     setStore("active_drones", s.active_drones);
     setStore("tools", s.tools);
     setStore("loaded", true);
-    setStore("chat", deriveChatFromFindings(s.recent_findings));
+    // Chat is additive — never replace it wholesale. SSE event handlers
+    // push transient messages (drone narrations, realworld-action alerts)
+    // that aren't backed by findings; if we replaced chat with the
+    // derived view on every snapshot refresh, those would vanish before
+    // the operator could read them. Instead, merge: take what's already
+    // in the chat, append any derived messages we haven't seen yet,
+    // re-sort by timestamp.
+    setStore("chat", mergeChat(store.chat, deriveChatFromFindings(s.recent_findings)));
   });
+}
+
+/** Maximum chat history kept in memory. Generous — chat is cheap and
+ *  the operator gets to scroll back through everything that happened. */
+const CHAT_CAP = 2000;
+
+function mergeChat(existing: ChatMessage[], incoming: ChatMessage[]): ChatMessage[] {
+  // Index existing by id so we don't double-add the same finding-derived
+  // message on repeated snapshot refreshes.
+  const seen = new Set<string>();
+  for (const m of existing) seen.add(m.id);
+  const merged: ChatMessage[] = [...existing];
+  for (const m of incoming) {
+    if (seen.has(m.id)) continue;
+    seen.add(m.id);
+    merged.push(m);
+  }
+  // Stable sort by ts (string ISO-8601 compares correctly). New
+  // messages from any source land in their correct chronological
+  // slot — and "new ones come after old ones" is automatic.
+  merged.sort((a, b) => a.ts.localeCompare(b.ts));
+  // Cap from the FRONT — keep newest 2000, drop the very oldest if
+  // memory is a worry. In practice no one will hit this.
+  if (merged.length > CHAT_CAP) {
+    return merged.slice(merged.length - CHAT_CAP);
+  }
+  return merged;
 }
 
 // ---- Helpers ---------------------------------------------------------------
@@ -264,7 +298,11 @@ function deriveChatFromFindings(findings: Finding[]): ChatMessage[] {
       });
     }
   }
-  return out.slice(-80);
+  // No cap here — the merge step in applySnapshot is the source of
+  // truth on chat retention and handles bounding (CHAT_CAP). Capping
+  // again here would silently discard messages the merge wanted to
+  // keep.
+  return out;
 }
 
 function oneLine(s: string): string {
@@ -329,7 +367,7 @@ export function ingestEvent(ev: StreamEvent): void {
           affected_gap_ids: (ev.affected_gap_ids as string[] | undefined) ?? [],
           finding_id: String(ev.finding_id ?? ""),
         });
-        if (c.length > 200) c.splice(0, c.length - 200);
+        if (c.length > 2000) c.splice(0, c.length - 2000);
       }),
     );
   }
@@ -390,7 +428,7 @@ export function ingestEvent(ev: StreamEvent): void {
           affected_gap_ids:
             typeof ev.gap_id === "string" ? [ev.gap_id] : [],
         });
-        if (c.length > 200) c.splice(0, c.length - 200);
+        if (c.length > 2000) c.splice(0, c.length - 2000);
       }),
     );
   }
@@ -419,7 +457,7 @@ export function ingestEvent(ev: StreamEvent): void {
             finding_id:
               typeof ev.finding_id === "string" ? ev.finding_id : undefined,
           });
-          if (c.length > 200) c.splice(0, c.length - 200);
+          if (c.length > 2000) c.splice(0, c.length - 2000);
         }),
       );
     }
