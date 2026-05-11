@@ -209,16 +209,22 @@ export function App() {
           </div>
 
           {/* Onboarding overlays sit above the dashboard until done.
-              Sequenced: key → budget → seed. Each gate stays open until
-              its precondition is satisfied. */}
+              Sequenced: key → budget → identity → seed.
+              Budget and identity gates are *acknowledgement-driven* —
+              they don't care whether the substrate has gaps. If the
+              operator hasn't explicitly answered the budget / identity
+              question yet, ask. (Earlier these required isEmpty() too;
+              that left the operator stranded on the dashboard whenever
+              a stray gap survived a wipe.)
+              Seed still gates on isEmpty() since seeding only makes
+              sense when there's no work yet. */}
           <Show when={isUnconfigured()}>
             <OnboardingKey />
           </Show>
           <Show
             when={
               !isUnconfigured() &&
-              !store.settings?.cost_ceiling_acknowledged &&
-              isEmpty()
+              !store.settings?.cost_ceiling_acknowledged
             }
           >
             <OnboardingBudget />
@@ -227,8 +233,7 @@ export function App() {
             when={
               !isUnconfigured() &&
               store.settings?.cost_ceiling_acknowledged &&
-              !store.settings?.identity_acknowledged &&
-              isEmpty()
+              !store.settings?.identity_acknowledged
             }
           >
             <OnboardingIdentity />
