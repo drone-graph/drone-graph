@@ -296,6 +296,7 @@ def _ensure_frontend_built() -> Path | None:
 
 
 def _neo4j_reachable(host: str, port: int, timeout_s: float = 1.0) -> bool:
+    """TCP-only liveness check — fast, but doesn't prove Bolt is ready."""
     try:
         with socket.create_connection((host, port), timeout=timeout_s):
             return True
@@ -303,11 +304,44 @@ def _neo4j_reachable(host: str, port: int, timeout_s: float = 1.0) -> bool:
         return False
 
 
+def _neo4j_bolt_ready(uri: str, timeout_s: float = 2.0) -> bool:
+    """Real Bolt handshake check. The TCP port opens before the Bolt
+    protocol is initialised — startup races showed up here as
+    "Connection to 127.0.0.1:7687 closed with incomplete handshake
+    response". We probe by opening a driver, running a trivial query,
+    and tearing down. Returns False on any failure."""
+    try:
+        from neo4j import GraphDatabase  # local import — heavy
+
+        user = os.environ.get("NEO4J_USER", "neo4j")
+        password = os.environ.get("NEO4J_PASSWORD", "drone-graph-dev")
+        driver = GraphDatabase.driver(
+            uri,
+            auth=(user, password),
+            connection_acquisition_timeout=timeout_s,
+            connection_timeout=timeout_s,
+            max_connection_lifetime=5,
+        )
+        try:
+            with driver.session() as session:
+                list(session.run("RETURN 1 AS x"))
+            return True
+        finally:
+            driver.close()
+    except Exception:  # noqa: BLE001 — any failure means "not ready yet"
+        return False
+
+
 def _ensure_neo4j() -> bool:
-    """Best-effort: bring Neo4j up via docker compose if it isn't reachable."""
+    """Best-effort: bring Neo4j up via docker compose if it isn't reachable.
+
+    Liveness is checked at two levels: TCP for the cheap path (port
+    open?) and a real Bolt handshake before returning success (so the
+    caller doesn't race the substrate.init_schema query against a
+    half-initialised database)."""
     uri = os.environ.get("NEO4J_URI", "bolt://localhost:7687")
     host, port = _parse_bolt(uri)
-    if _neo4j_reachable(host, port):
+    if _neo4j_reachable(host, port) and _neo4j_bolt_ready(uri):
         return True
     compose_file = _PKG_ROOT / "docker-compose.yml"
     if not compose_file.exists():
@@ -335,15 +369,17 @@ def _ensure_neo4j() -> bool:
     except subprocess.CalledProcessError as e:
         print(f"[mission-control] docker compose up failed: {e}", file=sys.stderr)
         return False
-    # Wait for the bolt port to answer.
-    deadline = time.time() + 60.0
-    print("[mission-control] waiting for Neo4j to be reachable…", file=sys.stderr)
+    # Wait for Bolt — not just the TCP port. Neo4j listens on 7687 ~10
+    # seconds before the Bolt protocol is actually ready; on a cold
+    # container start the gap is closer to 20-30 seconds.
+    deadline = time.time() + 90.0
+    print("[mission-control] waiting for Neo4j Bolt to be ready…", file=sys.stderr)
     while time.time() < deadline:
-        if _neo4j_reachable(host, port):
+        if _neo4j_reachable(host, port) and _neo4j_bolt_ready(uri):
             return True
         time.sleep(1.0)
     print(
-        f"[mission-control] Neo4j didn't answer at {host}:{port} after 60s — "
+        f"[mission-control] Neo4j Bolt didn't respond at {host}:{port} after 90s — "
         "check `docker compose logs neo4j`.",
         file=sys.stderr,
     )
