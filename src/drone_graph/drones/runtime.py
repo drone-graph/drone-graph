@@ -148,6 +148,7 @@ DEFAULT_EMERGENT_LOADOUT = [
     "cm_list_personas",
     "cm_create_persona",
     "cm_use_persona",
+    "cm_set_persona_capability",
 ]
 
 # Tools that imply this drone needs a real bash terminal.

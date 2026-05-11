@@ -146,6 +146,13 @@ export function TopBar() {
         </button>
         <button
           class="ghost"
+          onClick={() => setView("personas")}
+          classList={{ active: store.view === "personas" }}
+        >
+          personas
+        </button>
+        <button
+          class="ghost"
           onClick={() => setView("internals")}
           classList={{ active: store.view === "internals" }}
         >

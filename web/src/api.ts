@@ -8,6 +8,8 @@ import type {
   InboxResolveRequest,
   ModelRegistry,
   PendingInstall,
+  Persona,
+  PersonaCapability,
   SettingsPatch,
   SettingsView,
   Snapshot,
@@ -156,6 +158,25 @@ export const api = {
     http<{ finding: unknown }>(
       `/api/edit/gaps/${encodeURIComponent(gap_id)}/unpause`,
       { method: "POST" },
+    ),
+
+  // ---- Personas ---------------------------------------------------------
+  listPersonas: () => http<Persona[]>("/api/personas"),
+  getPersona: (name: string) =>
+    http<Persona>(`/api/personas/${encodeURIComponent(name)}`),
+  upsertPersonaCapability: (
+    name: string,
+    key: string,
+    patch: Partial<PersonaCapability> & { status: PersonaCapability["status"] },
+  ) =>
+    http<Persona>(
+      `/api/personas/${encodeURIComponent(name)}/capabilities/${encodeURIComponent(key)}`,
+      { method: "POST", body: patch },
+    ),
+  setPersonaBackedByRealHuman: (name: string, backed: boolean) =>
+    http<Persona>(
+      `/api/personas/${encodeURIComponent(name)}/backed-by-real-human`,
+      { method: "POST", body: { backed_by_real_human: backed } },
     ),
 
   // ---- Drone-attached chat + computer-use --------------------------------

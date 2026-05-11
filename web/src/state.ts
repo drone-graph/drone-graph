@@ -95,7 +95,7 @@ interface SubstrateStore {
   selected_gap_id: string | null;
   selected_finding_id: string | null;
   focused_drone_gap_id: string | null;
-  view: "console" | "findings" | "marketplace" | "internals" | "settings";
+  view: "console" | "findings" | "marketplace" | "personas" | "internals" | "settings";
   flash_gap_id: string | null;
   alignment_pulse_gap_id: string | null;
   settings: SettingsView | null;

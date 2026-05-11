@@ -26,6 +26,8 @@ Storage:
 """
 
 from drone_graph.personas.records import (
+    Capability,
+    CapabilityStatus,
     Persona,
     PersonaError,
     persona_dir,
@@ -34,6 +36,8 @@ from drone_graph.personas.records import (
 from drone_graph.personas.store import PersonaStore
 
 __all__ = [
+    "Capability",
+    "CapabilityStatus",
     "Persona",
     "PersonaError",
     "PersonaStore",

@@ -198,6 +198,34 @@ export interface SettingsPatch {
   identity_redaction_patterns?: string[] | null;
 }
 
+// ---- Personas -----------------------------------------------------------
+
+export type CapabilityStatus = "pending" | "registered" | "verified";
+
+export interface PersonaCapability {
+  key: string;
+  desired_value: string | null;
+  actual_value: string | null;
+  status: CapabilityStatus;
+  credential_ref: string | null;
+  notes: string | null;
+  updated_at: string;
+  verified_at: string | null;
+}
+
+export interface Persona {
+  name: string;
+  display_name: string;
+  backed_by_real_human: boolean;
+  bio: string | null;
+  notes: string | null;
+  ssh_fingerprint: string | null;
+  browser_profiles: string[];
+  capabilities: PersonaCapability[];
+  created_at: string;
+  created_by_drone_id: string | null;
+}
+
 export type InboxActionType =
   | "credential"
   | "oauth"

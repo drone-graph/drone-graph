@@ -15,6 +15,7 @@ import { FindingsGraph } from "./components/FindingsGraph";
 import { GapDetailOverlay } from "./components/GapDetail";
 import { Internals } from "./components/Internals";
 import { Marketplace } from "./components/Marketplace";
+import { Personas } from "./components/Personas";
 import { OnboardingBudget } from "./components/OnboardingBudget";
 import { OnboardingIdentity } from "./components/OnboardingIdentity";
 import { OnboardingKey } from "./components/OnboardingKey";
@@ -198,6 +199,7 @@ export function App() {
               fallback={
                 store.view === "findings" ? <FindingsGraph />
                 : store.view === "marketplace" ? <Marketplace />
+                : store.view === "personas" ? <Personas />
                 : store.view === "internals" ? <Internals />
                 : <Settings />
               }
