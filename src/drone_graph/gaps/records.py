@@ -75,6 +75,14 @@ class FindingKind(StrEnum):
     # ``note`` finding referencing the block; Gap Finding picks it up next
     # tick and re-dispatches.
     requires_user_action = "requires_user_action"
+    # Direct chat message between the operator and a specific live drone.
+    # author=user: the operator typed this into the drone's chat panel; the
+    # drone reads it via cm_browser.await_operator or sees it injected at
+    # the next turn boundary. author=worker: the drone wrote this back to
+    # the operator (a question, a status). Distinct from ``note`` so the
+    # UI can route it to the per-drone chat panel and not bury it in the
+    # global findings rail.
+    chat_with_drone = "chat_with_drone"
 
 
 def _now() -> datetime:
@@ -120,6 +128,20 @@ class Gap(BaseModel):
     # doesn't support thinking, this value is silently ignored at dispatch
     # time so GF can set it without worrying about model capability.
     reasoning_effort: str | None = None
+    # Identity policy. When True, Gap Finding has judged this gap genuinely
+    # requires the operator's own identity (their GitHub account, their
+    # shell, their cwd, their saved creds) to complete. The scheduler
+    # blocks dispatch until either:
+    #   * the operator approves via the inbox → ``identity_approved`` flips
+    #     to True and the drone runs with real env + real $HOME + real $PWD,
+    #   * OR Settings.allow_operator_identity is False → the runtime
+    #     silently runs the drone in clean (isolated) mode and emits a
+    #     ``policy.identity_denied`` event; ``identity_denied_reason`` is
+    #     set so future drones don't keep re-asking.
+    # Defaults to False; drones run with throwaway identities.
+    uses_operator_identity: bool = False
+    identity_approved: bool = False
+    identity_denied_reason: str | None = None
 
 
 class Finding(BaseModel):

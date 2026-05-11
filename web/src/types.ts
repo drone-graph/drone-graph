@@ -167,6 +167,10 @@ export interface SettingsView {
   default_paranoid_install: boolean;
   sound_enabled: boolean;
   tier_overrides: Record<string, Record<string, string>>;
+  max_concurrent_browsers: number;
+  allow_operator_identity: boolean;
+  identity_acknowledged: boolean;
+  identity_redaction_patterns: string[];
   settings_path: string;
   updated_at: string;
 }
@@ -181,6 +185,10 @@ export interface SettingsPatch {
   default_paranoid_install?: boolean | null;
   sound_enabled?: boolean | null;
   tier_overrides?: Record<string, Record<string, string>> | null;
+  max_concurrent_browsers?: number | null;
+  allow_operator_identity?: boolean | null;
+  identity_acknowledged?: boolean | null;
+  identity_redaction_patterns?: string[] | null;
 }
 
 export type InboxActionType =
@@ -190,6 +198,7 @@ export type InboxActionType =
   | "purchase"
   | "approval"
   | "mfa"
+  | "identity"
   | "other";
 
 export interface InboxItem {

@@ -125,10 +125,16 @@ export function ActiveDronesRail() {
 function DroneRow(props: { d: ActiveDrone }) {
   const turn = () => `${props.d.turn ?? "—"}/${props.d.max_turns ?? "?"}`;
   const cost = () => (props.d.cost_usd ?? 0).toFixed(3);
+  const browserSnap = () => store.browser_state[props.d.gap_id] ?? null;
+  const awaiting = () => !!browserSnap()?.awaiting_prompt;
   return (
     <div
       class="drone-row"
-      classList={{ cancelling: props.d.cancel_signaled }}
+      classList={{
+        cancelling: props.d.cancel_signaled,
+        "has-browser": !!browserSnap(),
+        awaiting: awaiting(),
+      }}
       onClick={() => {
         selectGap(props.d.gap_id);
         focusDrone(props.d.gap_id);
@@ -136,17 +142,32 @@ function DroneRow(props: { d: ActiveDrone }) {
     >
       <div class="row" style={{ "justify-content": "space-between" }}>
         <span class={`tag ${roleTag(props.d.role)}`}>{shortRole(props.d.role)}</span>
-        <button
-          class="ghost danger"
-          onClick={(e) => {
-            e.stopPropagation();
-            void api.cancelDrone(props.d.gap_id);
-          }}
-          title="cancel drone"
-          style={{ padding: "1px 6px", "font-size": "var(--fs-xs)" }}
-        >
-          ✕
-        </button>
+        <div class="row" style={{ gap: "4px" }}>
+          <Show when={browserSnap()}>
+            <span
+              class="browser-indicator"
+              classList={{ awaiting: awaiting() }}
+              title={
+                awaiting()
+                  ? `drone needs you: ${browserSnap()?.awaiting_prompt ?? ""}`
+                  : `live browser · ${browserSnap()?.url ?? ""}`
+              }
+            >
+              ◐
+            </span>
+          </Show>
+          <button
+            class="ghost danger"
+            onClick={(e) => {
+              e.stopPropagation();
+              void api.cancelDrone(props.d.gap_id);
+            }}
+            title="cancel drone"
+            style={{ padding: "1px 6px", "font-size": "var(--fs-xs)" }}
+          >
+            ✕
+          </button>
+        </div>
       </div>
       <div class="intent" title={props.d.gap_id}>
         {props.d.gap_id.slice(0, 8)}
@@ -185,6 +206,27 @@ function DroneRow(props: { d: ActiveDrone }) {
         .drone-row.cancelling {
           border-color: var(--copper);
           opacity: 0.6;
+        }
+        .drone-row.has-browser {
+          border-left: 2px solid var(--cobalt);
+        }
+        .drone-row.awaiting {
+          border-color: var(--copper);
+          animation: rowPulse 1.4s ease-in-out infinite;
+        }
+        @keyframes rowPulse {
+          0%, 100% { background: var(--bg-2); }
+          50% { background: rgba(200, 128, 40, 0.18); }
+        }
+        .browser-indicator {
+          color: var(--cobalt-soft);
+          font-size: 14px;
+          line-height: 1;
+          display: inline-flex;
+          align-items: center;
+        }
+        .browser-indicator.awaiting {
+          color: var(--copper);
         }
         .intent {
           font-size: var(--fs-sm);

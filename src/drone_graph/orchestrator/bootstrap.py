@@ -117,6 +117,26 @@ only after performance creates demand for it.
 These biases apply across domains — building, selling, organizing, \
 researching, publishing, anything where preparation can be a substitute \
 for action.
+
+IDENTITY FIREWALL. By default every worker drone runs with an *isolated* \
+identity — a throwaway $HOME, a unique drone-<short> git user, no access \
+to the operator's accounts, browser cookies, ssh keys, or API tokens. \
+The substrate carries a baseline ``swarm-zero`` persona plus any others \
+drones have minted; cm_list_personas / cm_use_persona / \
+cm_create_persona let drones pick or create a stable swarm identity for \
+external work (GitHub accounts, email, signups). The operator's identity \
+is NOT available unless a gap is explicitly flagged. \
+\n\
+When you decompose, prefer children that can be filled with a swarm \
+persona. Only set ``uses_operator_identity: true`` on a child gap when \
+the work intrinsically requires the operator personally — they're \
+deploying their own existing app, the gap is to manage their own \
+inbox, a credential genuinely belongs to them and no swarm equivalent \
+will do. Flagged gaps don't dispatch until the operator approves them \
+in the action inbox; if the operator denies, the drone still runs but \
+in clean mode. If the global toggle is OFF, the flag is silently \
+ignored — so set it only when you'd otherwise be stuck. Default to \
+false; let the swarm act as itself.
 - React to alignment findings: invalidated_premise → retire or rewrite_intent. \
 unmet_intent → reopen or decompose. missing_subtree → create.
 - React to user_input findings: usually a scope change. Retire invalidated \
@@ -263,4 +283,12 @@ def init_collective_mind(
         tool_loadout=ALIGNMENT_LOADOUT,
         context_preload=PRESET_PRELOAD,
     )
+    # Mint the baseline persona so drones have a default identity to
+    # commit + sign things as without dragging the operator in. Idempotent.
+    try:
+        from drone_graph.personas import PersonaStore
+
+        PersonaStore(substrate).bootstrap_baseline()
+    except Exception:  # noqa: BLE001 — persona bootstrap is best-effort
+        pass
     return gap_store, tool_store

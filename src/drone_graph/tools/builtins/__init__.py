@@ -6,7 +6,9 @@ here keeps the surface visible at a glance.
 
 from drone_graph.tools.builtins import (
     alignment,
+    browser,
     concurrency,
+    personas,
     queries,
     registry_admin,
     structural,
@@ -15,7 +17,9 @@ from drone_graph.tools.builtins import (
 
 __all__ = [
     "alignment",
+    "browser",
     "concurrency",
+    "personas",
     "queries",
     "registry_admin",
     "structural",

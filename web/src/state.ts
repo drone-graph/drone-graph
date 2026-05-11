@@ -49,6 +49,37 @@ export interface ChatMessage {
 
 // ---- Substrate store -------------------------------------------------------
 
+/** Live state for a per-drone Chromium window. Populated from
+ *  ``browser.state`` events on the SSE stream and from the
+ *  /api/drones/{gap_id}/browser-state poll. ``screenshot_path`` is a path
+ *  on the server's disk; the inline ``screenshot_b64`` is what the UI
+ *  actually renders. */
+export interface BrowserSnapshot {
+  drone_id?: string;
+  profile?: string;
+  url?: string;
+  title?: string;
+  action?: string;
+  ts?: string;
+  /** Server-side path; informational, not rendered. */
+  screenshot_path?: string;
+  /** Base64-encoded PNG body for the latest screenshot. */
+  screenshot_b64?: string;
+  /** When the drone last emitted ``browser.await_operator`` — the panel
+   *  highlights itself and the operator's reply unblocks the drone. */
+  awaiting_prompt?: string;
+  awaiting_finding_id?: string;
+}
+
+/** Per-drone chat thread (operator ↔ specific drone). Keyed by gap_id. */
+export interface DroneChatMessage {
+  id: string;
+  author: "user" | "worker";
+  text: string;
+  ts: string;
+  finding_id?: string;
+}
+
 interface SubstrateStore {
   loaded: boolean;
   status: SwarmStatus | null;
@@ -69,6 +100,11 @@ interface SubstrateStore {
   alignment_pulse_gap_id: string | null;
   settings: SettingsView | null;
   inbox: InboxItem[];
+  /** Last-known browser state per gap. ``null`` = drone has no active
+   *  Chromium window. The DroneAttachedChat panel reads from here. */
+  browser_state: Record<string, BrowserSnapshot | null>;
+  /** Operator ↔ drone chat threads. Per-gap (one drone per gap). */
+  drone_chat: Record<string, DroneChatMessage[]>;
 }
 
 const initial: SubstrateStore = {
@@ -91,6 +127,8 @@ const initial: SubstrateStore = {
   alignment_pulse_gap_id: null,
   settings: null,
   inbox: [],
+  browser_state: {},
+  drone_chat: {},
 };
 
 const [store, setStore] = createStore<SubstrateStore>(initial);
@@ -386,6 +424,88 @@ export function ingestEvent(ev: StreamEvent): void {
       );
     }
   }
+  if (kind === "browser.state") {
+    // A drone took a cm_browser action. We refresh the snapshot lazily
+    // via the API endpoint (it returns base64 inline) so we don't have
+    // to plumb screenshot bytes through SSE.
+    const gid = ev.gap_id as string | undefined;
+    if (gid) void refreshBrowserState(gid);
+  }
+  if (kind === "browser.await_operator") {
+    const gid = ev.gap_id as string | undefined;
+    const prompt = typeof ev.prompt === "string" ? ev.prompt : "";
+    const askId = typeof ev.ask_finding_id === "string" ? ev.ask_finding_id : "";
+    if (gid) {
+      setStore(
+        "browser_state",
+        produce((b) => {
+          const cur = b[gid] ?? null;
+          b[gid] = {
+            ...(cur ?? {}),
+            awaiting_prompt: prompt,
+            awaiting_finding_id: askId,
+          };
+        }),
+      );
+      // Drone wrote a chat_with_drone finding (author=worker) — append to
+      // the per-drone chat thread immediately for snappy UX.
+      setStore(
+        "drone_chat",
+        produce((c) => {
+          const thread = c[gid] ?? [];
+          thread.push({
+            id: askId || `await-${Math.random()}`,
+            author: "worker",
+            text: prompt,
+            ts: String(ev.ts ?? new Date().toISOString()),
+            finding_id: askId || undefined,
+          });
+          c[gid] = thread.slice(-100);
+        }),
+      );
+      playSound("alert");
+    }
+  }
+  if (kind === "browser.close") {
+    const gid = ev.gap_id as string | undefined;
+    if (gid) {
+      setStore(
+        "browser_state",
+        produce((b) => {
+          b[gid] = null;
+        }),
+      );
+    }
+  }
+  if (kind === "chat.drone") {
+    // Echo of the operator's own message landing in the substrate. Append
+    // to the per-drone thread for that gap.
+    const gid = ev.gap_id as string | undefined;
+    const text = String(ev.text ?? "");
+    const findingId =
+      typeof ev.finding_id === "string" ? ev.finding_id : undefined;
+    if (gid && text) {
+      setStore(
+        "drone_chat",
+        produce((c) => {
+          const thread = c[gid] ?? [];
+          const exists = findingId
+            ? thread.some((m) => m.finding_id === findingId)
+            : false;
+          if (!exists) {
+            thread.push({
+              id: findingId ?? `chat-${Math.random()}`,
+              author: "user",
+              text,
+              ts: String(ev.ts ?? new Date().toISOString()),
+              finding_id: findingId,
+            });
+            c[gid] = thread.slice(-100);
+          }
+        }),
+      );
+    }
+  }
   if (kind === "controller.ready") {
     void refreshStatus();
     void refreshSettings();
@@ -449,6 +569,81 @@ async function refreshPendingInstalls(): Promise<void> {
     setStore("pending_installs", await api.pendingInstalls());
   } catch {
     /* ignore */
+  }
+}
+
+export async function refreshBrowserState(gap_id: string): Promise<void> {
+  try {
+    const s = await api.browserState(gap_id);
+    setStore(
+      "browser_state",
+      produce((b) => {
+        if (!s.active) {
+          b[gap_id] = null;
+          return;
+        }
+        const existing = b[gap_id] ?? null;
+        b[gap_id] = {
+          drone_id: s.drone_id,
+          profile: s.profile,
+          url: s.url,
+          title: s.title,
+          action: s.action,
+          ts: s.ts,
+          screenshot_path: s.screenshot_path,
+          screenshot_b64: s.screenshot_b64,
+          // Preserve await_operator marker if it's outstanding; the
+          // resume path clears it explicitly when the operator replies.
+          awaiting_prompt: existing?.awaiting_prompt,
+          awaiting_finding_id: existing?.awaiting_finding_id,
+        };
+      }),
+    );
+  } catch {
+    /* ignore — drone may have just exited */
+  }
+}
+
+export async function sendDroneChat(
+  gap_id: string,
+  text: string,
+): Promise<void> {
+  const t = text.trim();
+  if (!t) return;
+  // Optimistically append to the thread so the input clears instantly.
+  setStore(
+    "drone_chat",
+    produce((c) => {
+      const thread = c[gap_id] ?? [];
+      thread.push({
+        id: `local-${Math.random()}`,
+        author: "user",
+        text: t,
+        ts: new Date().toISOString(),
+      });
+      c[gap_id] = thread.slice(-100);
+    }),
+  );
+  try {
+    const r = await api.chatWithDrone(gap_id, t);
+    // Clear the await_operator marker — the drone will pick up the
+    // message on its next poll/turn and resume.
+    setStore(
+      "browser_state",
+      produce((b) => {
+        const cur = b[gap_id];
+        if (cur && cur.awaiting_prompt) {
+          b[gap_id] = {
+            ...cur,
+            awaiting_prompt: undefined,
+            awaiting_finding_id: undefined,
+          };
+        }
+      }),
+    );
+    void r;
+  } catch (e) {
+    void e;
   }
 }
 

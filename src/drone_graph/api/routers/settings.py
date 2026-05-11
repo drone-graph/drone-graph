@@ -165,7 +165,8 @@ class InboxItem(BaseModel):
     summary: str
     affected_gap_ids: list[str]
     action_type: Literal[
-        "credential", "oauth", "sign_in", "purchase", "approval", "mfa", "other"
+        "credential", "oauth", "sign_in", "purchase", "approval", "mfa",
+        "identity", "other",
     ]
     details: dict[str, Any]
     artefact_paths: list[str]
@@ -190,6 +191,7 @@ class InboxResolveRequest(BaseModel):
 def list_inbox() -> list[InboxItem]:
     s = get_state()
     resolved_ids = _resolved_block_ids(s)
+    decided_identity_gaps = _decided_identity_gap_ids(s)
     # Pre-fetch gap status so we can hide blocks for gaps that no longer
     # exist or have been retired since the drone emitted them. A user-input
     # finding might unstick a retired subtree, so we only treat the gap as
@@ -211,6 +213,11 @@ def list_inbox() -> list[InboxItem]:
             if not live:
                 continue
         action_type, details = _parse_block_details(f.summary, f.artefact_paths)
+        # Identity blocks auto-resolve when the operator has already
+        # decided (grant/deny). Skips the extra "mark resolved" click.
+        if action_type == "identity":
+            if any(gid in decided_identity_gaps for gid in f.affected_gap_ids):
+                continue
         out.append(
             InboxItem(
                 finding_id=f.id,
@@ -295,16 +302,44 @@ def _resolved_block_ids(s: Any) -> set[str]:
     return out
 
 
+def _decided_identity_gap_ids(s: Any) -> set[str]:
+    """Gap ids that already have an identity grant OR deny note. Used to
+    auto-resolve identity-request inbox items the moment the operator
+    clicks grant or deny, without forcing them to also click 'resolve'."""
+    out: set[str] = set()
+    for f in s.store.all_findings():
+        if f.kind.value != FindingKind.note.value:
+            continue
+        for p in f.artefact_paths:
+            if isinstance(p, str) and (
+                p.startswith("identity-grant:") or p.startswith("identity-deny:")
+            ):
+                out.add(p.split(":", 1)[1])
+    return out
+
+
 def _parse_block_details(
     summary: str, artefact_paths: list[str]
 ) -> tuple[
-    Literal["credential", "oauth", "sign_in", "purchase", "approval", "mfa", "other"],
+    Literal[
+        "credential", "oauth", "sign_in", "purchase", "approval", "mfa",
+        "identity", "other",
+    ],
     dict[str, Any],
 ]:
     """Drones emit blocks via ``cm_write_finding(kind=requires_user_action, …)``.
     By convention, structured detail lives in an artefact JSON file whose path
     is recorded in ``artefact_paths``. If we can read it, we get a rich
     payload; if not, we infer the type from the summary text."""
+    # Sentinel-style artefact paths take precedence — the scheduler emits
+    # these for policy-blocks (identity approval) that don't need their
+    # own JSON file.
+    for p in artefact_paths:
+        if isinstance(p, str) and p.startswith("identity-request:"):
+            return "identity", {
+                "summary": summary,
+                "gap_id": p.split(":", 1)[1],
+            }
     for p in artefact_paths:
         if not isinstance(p, str) or not p.endswith(".json"):
             continue
@@ -322,6 +357,7 @@ def _parse_block_details(
                 "purchase",
                 "approval",
                 "mfa",
+                "identity",
                 "other",
             ):
                 action_type = "other"

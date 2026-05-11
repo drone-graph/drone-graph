@@ -60,7 +60,7 @@ export function OnboardingBudget() {
         <div class="header">
           <span class="dot heartbeat" />
           <span class="title">DRONE GRAPH</span>
-          <span class="dim sub">· MISSION CONTROL · step 2 of 2</span>
+          <span class="dim sub">· MISSION CONTROL · step 2 of 3</span>
         </div>
 
         <h1>Set a cost ceiling.</h1>

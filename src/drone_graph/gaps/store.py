@@ -185,6 +185,7 @@ class GapStore:
                 tool_loadout=list(c.get("tool_loadout", []) or []),
                 tool_suggestions=list(c.get("tool_suggestions", []) or []),
                 reasoning_effort=(c.get("reasoning_effort") or None),
+                uses_operator_identity=bool(c.get("uses_operator_identity", False)),
             )
             for c in children
             if c["intent"].strip().lower() not in existing_intents_lc
@@ -212,7 +213,10 @@ class GapStore:
             "  tool_loadout: child.tool_loadout, "
             "  tool_suggestions: child.tool_suggestions, "
             "  context_preload: [], preset_kind: null, "
-            "  reasoning_effort: child.reasoning_effort "
+            "  reasoning_effort: child.reasoning_effort, "
+            "  uses_operator_identity: child.uses_operator_identity, "
+            "  identity_approved: false, "
+            "  identity_denied_reason: null "
             "}) "
             "CREATE (p)-[:PARENT_OF]->(c) "
             "WITH p, collect(c.id) AS child_ids "
@@ -243,6 +247,7 @@ class GapStore:
                     "tool_loadout": list(c.tool_loadout),
                     "tool_suggestions": list(c.tool_suggestions),
                     "reasoning_effort": c.reasoning_effort,
+                    "uses_operator_identity": c.uses_operator_identity,
                 }
                 for c in child_records
             ],
@@ -271,6 +276,7 @@ class GapStore:
         tool_loadout: list[str] | None = None,
         tool_suggestions: list[str] | None = None,
         reasoning_effort: str | None = None,
+        uses_operator_identity: bool = False,
     ) -> Finding:
         new_gap = Gap(
             intent=intent,
@@ -279,6 +285,7 @@ class GapStore:
             tool_loadout=list(tool_loadout or []),
             tool_suggestions=list(tool_suggestions or []),
             reasoning_effort=reasoning_effort,
+            uses_operator_identity=uses_operator_identity,
         )
         finding = Finding(
             tick=tick,
@@ -294,7 +301,10 @@ class GapStore:
             "  model_tier: $tier, created_at: datetime($created_at), "
             "  tool_loadout: $tool_loadout, tool_suggestions: $tool_suggestions, "
             "  context_preload: [], preset_kind: null, "
-            "  reasoning_effort: $reasoning_effort "
+            "  reasoning_effort: $reasoning_effort, "
+            "  uses_operator_identity: $uses_operator_identity, "
+            "  identity_approved: false, "
+            "  identity_denied_reason: null "
             "}) "
             "CREATE (f:Finding { "
             "  id: $finding_id, tick: $tick, author: $author, kind: $kind, "
@@ -314,6 +324,7 @@ class GapStore:
             tool_loadout=list(new_gap.tool_loadout),
             tool_suggestions=list(new_gap.tool_suggestions),
             reasoning_effort=new_gap.reasoning_effort,
+            uses_operator_identity=new_gap.uses_operator_identity,
             finding_id=finding.id,
             tick=tick,
             author=author.value,
@@ -617,6 +628,78 @@ class GapStore:
         )
         self._write_finding_node(finding)
         return finding
+
+    # ---- Identity grants ------------------------------------------------
+    #
+    # When a gap is minted with ``uses_operator_identity=True``, the
+    # scheduler stops short of dispatching it until either the operator
+    # approves (->apply_grant_identity) or the master policy switch is
+    # off (->apply_deny_identity records the policy reason so future GF
+    # passes don't keep re-asking).
+
+    def apply_grant_identity(
+        self,
+        *,
+        gap_id: str,
+        tick: int,
+        note: str = "",
+        author: FindingAuthor = FindingAuthor.user,
+    ) -> Finding:
+        gap = self.get(gap_id)
+        if gap is None:
+            raise ValueError(f"no gap with id {gap_id}")
+        if not gap.uses_operator_identity:
+            raise ValueError(
+                f"gap {gap_id} does not request operator identity"
+            )
+        self.substrate.execute_write(
+            "MATCH (g:Gap {id: $id}) SET g.identity_approved = true, "
+            "g.identity_denied_reason = null",
+            id=gap.id,
+        )
+        return self.append_finding(
+            tick=tick,
+            author=author,
+            kind=FindingKind.note,
+            summary=(
+                f"Operator approved use of personal identity for gap "
+                f"{gap.id[:8]}." + (f" Note: {note}" if note else "")
+            ),
+            affected_gap_ids=[gap.id],
+            artefact_paths=[f"identity-grant:{gap.id}"],
+        )
+
+    def apply_deny_identity(
+        self,
+        *,
+        gap_id: str,
+        reason: str,
+        tick: int,
+        author: FindingAuthor = FindingAuthor.user,
+    ) -> Finding:
+        gap = self.get(gap_id)
+        if gap is None:
+            raise ValueError(f"no gap with id {gap_id}")
+        reason = (reason or "denied by operator").strip()
+        self.substrate.execute_write(
+            "MATCH (g:Gap {id: $id}) SET g.identity_approved = false, "
+            "g.identity_denied_reason = $reason",
+            id=gap.id,
+            reason=reason,
+        )
+        return self.append_finding(
+            tick=tick,
+            author=author,
+            kind=FindingKind.note,
+            summary=(
+                f"Operator declined use of personal identity for gap "
+                f"{gap.id[:8]}: {reason}. Drone will run with isolated "
+                "identity; if that's insufficient, GF should decompose "
+                "differently."
+            ),
+            affected_gap_ids=[gap.id],
+            artefact_paths=[f"identity-deny:{gap.id}"],
+        )
 
     # ---- Bootstrap ----
 

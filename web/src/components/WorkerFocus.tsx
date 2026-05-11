@@ -3,6 +3,8 @@ import { Show, createMemo } from "solid-js";
 import { api } from "../api";
 import { focusDrone, store } from "../state";
 
+import { DroneAttachedChat } from "./DroneAttachedChat";
+
 export function WorkerFocus() {
   const drone = createMemo(() => {
     const gid = store.focused_drone_gap_id;
@@ -62,6 +64,7 @@ export function WorkerFocus() {
             <pre class="lines">{drone()!.tail_lines.join("\n")}</pre>
           </Show>
         </div>
+        <DroneAttachedChat gapId={drone()!.gap_id} />
         <style>{`
           .focus {
             position: absolute;

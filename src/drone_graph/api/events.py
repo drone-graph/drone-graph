@@ -214,6 +214,16 @@ class DroneTapeTailer:
         with self._lock:
             return self._state.get(gap_id)
 
+    def browser_state_for(self, gap_id: str) -> dict[str, Any] | None:
+        """Latest cm_browser state event for the drone on this gap (url,
+        title, last action, screenshot path). ``None`` if the drone has no
+        active browser session."""
+        with self._lock:
+            v = self._state.get(gap_id)
+            if v is None:
+                return None
+            return dict(v.browser_state) if v.browser_state else None
+
     # ---- Internal --------------------------------------------------------
 
     def _loop(self) -> None:
@@ -321,6 +331,49 @@ class DroneTapeTailer:
                         text=rec.get("text"),
                         finding_id=rec.get("finding_id"),
                     )
+            elif ev == "browser.state":
+                # Latest cm_browser action on this gap. The DroneAttachedChat
+                # panel renders the screenshot + url + action as a live view.
+                v.browser_state = {
+                    "drone_id": rec.get("drone_id"),
+                    "profile": rec.get("profile"),
+                    "url": rec.get("url"),
+                    "title": rec.get("title"),
+                    "action": rec.get("action"),
+                    "screenshot_path": rec.get("screenshot_path"),
+                    "ts": rec.get("ts"),
+                }
+                if self._bus is not None:
+                    self._bus.publish(
+                        "browser.state",
+                        drone_id=rec.get("drone_id"),
+                        gap_id=rec.get("gap_id"),
+                        profile=rec.get("profile"),
+                        url=rec.get("url"),
+                        title=rec.get("title"),
+                        action=rec.get("action"),
+                        screenshot_path=rec.get("screenshot_path"),
+                    )
+            elif ev == "browser.await_operator":
+                if self._bus is not None:
+                    self._bus.publish(
+                        "browser.await_operator",
+                        drone_id=rec.get("drone_id"),
+                        gap_id=rec.get("gap_id"),
+                        profile=rec.get("profile"),
+                        prompt=rec.get("prompt"),
+                        ask_finding_id=rec.get("ask_finding_id"),
+                    )
+            elif ev == "browser.close":
+                # Clear the cached state so the UI knows the session is gone.
+                v.browser_state = None
+                if self._bus is not None:
+                    self._bus.publish(
+                        "browser.close",
+                        drone_id=rec.get("drone_id"),
+                        gap_id=rec.get("gap_id"),
+                        profile=rec.get("profile"),
+                    )
 
 
 class _DroneVitals:
@@ -332,6 +385,7 @@ class _DroneVitals:
         "cost_usd",
         "tokens_in",
         "tokens_out",
+        "browser_state",
     )
 
     def __init__(self) -> None:
@@ -342,3 +396,5 @@ class _DroneVitals:
         self.cost_usd: float | None = None
         self.tokens_in: int | None = None
         self.tokens_out: int | None = None
+        # Latest cm_browser state snapshot for the drone working this gap.
+        self.browser_state: dict[str, Any] | None = None

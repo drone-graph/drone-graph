@@ -16,6 +16,7 @@ import { GapDetailOverlay } from "./components/GapDetail";
 import { Internals } from "./components/Internals";
 import { Marketplace } from "./components/Marketplace";
 import { OnboardingBudget } from "./components/OnboardingBudget";
+import { OnboardingIdentity } from "./components/OnboardingIdentity";
 import { OnboardingKey } from "./components/OnboardingKey";
 import { OnboardingSeed } from "./components/OnboardingSeed";
 import { ParanoidModal } from "./components/ParanoidModal";
@@ -224,6 +225,17 @@ export function App() {
             when={
               !isUnconfigured() &&
               store.settings?.cost_ceiling_acknowledged &&
+              !store.settings?.identity_acknowledged &&
+              isEmpty()
+            }
+          >
+            <OnboardingIdentity />
+          </Show>
+          <Show
+            when={
+              !isUnconfigured() &&
+              store.settings?.cost_ceiling_acknowledged &&
+              store.settings?.identity_acknowledged &&
               isEmpty()
             }
           >

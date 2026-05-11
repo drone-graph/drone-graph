@@ -92,6 +92,10 @@ class SignalStore(Protocol):
         """All live claims held by ``drone_id``."""
         ...
 
+    def claims_by_kind(self, kind: str) -> list[ClaimRecord]:
+        """All live claims of the given ``kind``."""
+        ...
+
     def release_all_for_drone(self, drone_id: str) -> int:
         """Release every claim ``drone_id`` holds. Returns rows deleted."""
         ...

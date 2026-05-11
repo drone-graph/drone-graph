@@ -486,6 +486,15 @@ class SwarmController:
         sched.tick += 1
         return int(sched.tick)
 
+    def current_tick(self) -> int:
+        """Read-only accessor for the running scheduler's tick — used by
+        endpoints that need to stamp a finding without advancing the clock
+        (e.g. operator chat to a drone)."""
+        sched = self._scheduler
+        if sched is None:
+            return 0
+        return int(getattr(sched, "tick", 0))
+
     def shutdown(self) -> None:
         self.control.request_stop()
         self.control.resume()  # let the scheduler observe stop_requested

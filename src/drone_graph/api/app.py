@@ -37,6 +37,7 @@ from fastapi.staticfiles import StaticFiles
 from drone_graph.api import settings as cfg
 from drone_graph.api.control import SwarmController
 from drone_graph.api.events import EventBus
+from drone_graph.api.routers import chat as chat_router
 from drone_graph.api.routers import control as control_router
 from drone_graph.api.routers import edit as edit_router
 from drone_graph.api.routers import settings as settings_router
@@ -204,6 +205,7 @@ def build_app(
     app.include_router(control_router.router)
     app.include_router(stream_router.router)
     app.include_router(settings_router.router)
+    app.include_router(chat_router.router)
 
     dist = _find_web_dist()
     if dist is not None:

@@ -41,10 +41,33 @@ if [ "$NEEDS_VENV" = "0" ] && ! "$VENV/bin/python" -c "import drone_graph.api" 2
   NEEDS_INSTALL=1
 fi
 
-if [ "$NEEDS_VENV" = "1" ] || [ "$NEEDS_INSTALL" = "1" ]; then
+NEEDS_BROWSER=0
+# Playwright ships with bindings but the actual Chromium binary is a
+# separate ~150MB download. Ask Playwright itself for its expected
+# binary path — this works cross-platform (macOS / Linux / Windows /
+# any custom PLAYWRIGHT_BROWSERS_PATH). If the binary at that path
+# doesn't exist, we need to fetch it.
+if [ "$NEEDS_VENV" = "0" ] && [ "$NEEDS_INSTALL" = "0" ]; then
+  if ! "$VENV/bin/python" - <<'PY' >/dev/null 2>&1
+import os, sys
+try:
+    from playwright.sync_api import sync_playwright
+    with sync_playwright() as p:
+        path = p.chromium.executable_path
+        sys.exit(0 if path and os.path.exists(path) else 1)
+except Exception:
+    sys.exit(1)
+PY
+  then
+    NEEDS_BROWSER=1
+  fi
+fi
+
+if [ "$NEEDS_VENV" = "1" ] || [ "$NEEDS_INSTALL" = "1" ] || [ "$NEEDS_BROWSER" = "1" ]; then
   echo "[start] First-time setup is needed before Mission Control can run:"
   [ "$NEEDS_VENV" = "1" ]    && echo "    · create Python virtual env at ./$VENV  (using $PY)"
   [ "$NEEDS_INSTALL" = "1" ] && echo "    · pip install -e .                       (drone-graph + deps, ~30s)"
+  [ "$NEEDS_BROWSER" = "1" ] && echo "    · playwright install chromium             (~150MB Chromium binary for computer-use)"
   echo ""
   printf "Proceed? [Y/n] "
   read -r reply || reply=""
@@ -65,6 +88,13 @@ if [ "$NEEDS_VENV" = "1" ] || [ "$NEEDS_INSTALL" = "1" ]; then
     echo "[start] installing drone-graph (this is the slow step)…"
     "$VENV/bin/pip" install --quiet --upgrade pip
     "$VENV/bin/pip" install --quiet -e .
+    # First-time install always needs Chromium too. It's idempotent — if
+    # browsers already exist for this platform, this is a no-op.
+    NEEDS_BROWSER=1
+  fi
+  if [ "$NEEDS_BROWSER" = "1" ]; then
+    echo "[start] installing Chromium for computer-use (~150MB, one-time)…"
+    "$VENV/bin/playwright" install chromium
   fi
   echo "[start] setup complete."
   echo ""

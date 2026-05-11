@@ -140,4 +140,42 @@ export const api = {
       method: "POST",
       body: req,
     }),
+
+  // ---- Identity grant/deny -----------------------------------------------
+  grantIdentity: (gap_id: string, note = "") =>
+    http<{ finding: unknown }>(
+      `/api/edit/gaps/${encodeURIComponent(gap_id)}/grant-identity`,
+      { method: "POST", body: { note } },
+    ),
+  denyIdentity: (gap_id: string, reason = "") =>
+    http<{ finding: unknown }>(
+      `/api/edit/gaps/${encodeURIComponent(gap_id)}/deny-identity`,
+      { method: "POST", body: { reason } },
+    ),
+
+  // ---- Drone-attached chat + computer-use --------------------------------
+  chatWithDrone: (gap_id: string, text: string) =>
+    http<{ ok: boolean; finding_id: string }>(
+      `/api/chat/drone/${encodeURIComponent(gap_id)}`,
+      { method: "POST", body: { text } },
+    ),
+  browserState: (gap_id: string) =>
+    http<BrowserState>(`/api/drones/${encodeURIComponent(gap_id)}/browser-state`),
+  screenshot: (gap_id: string) =>
+    http<{ b64: string; ts: string; url: string; title: string; action: string }>(
+      `/api/drones/${encodeURIComponent(gap_id)}/screenshot`,
+    ),
 };
+
+export interface BrowserState {
+  active: boolean;
+  drone_id?: string;
+  profile?: string;
+  url?: string;
+  title?: string;
+  action?: string;
+  screenshot_path?: string;
+  screenshot_b64?: string;
+  screenshot_bytes?: number;
+  ts?: string;
+}

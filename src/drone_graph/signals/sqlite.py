@@ -208,6 +208,16 @@ class SQLiteSignalStore:
             ).fetchall()
         return [_row_to_claim(r) for r in rows]
 
+    def claims_by_kind(self, kind: str) -> list[ClaimRecord]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT kind, key, drone_id, acquired_at, expires_at, "
+                "       cancelled, metadata "
+                "FROM claims WHERE kind=?",
+                (kind,),
+            ).fetchall()
+        return [_row_to_claim(r) for r in rows]
+
     def release_all_for_drone(self, drone_id: str) -> int:
         with self._lock:
             cur = self._conn.execute(

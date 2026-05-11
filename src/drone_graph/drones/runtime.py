@@ -109,6 +109,7 @@ from drone_graph.drones.providers import (
 from drone_graph.gaps import Finding, Gap, GapStore
 from drone_graph.gaps.records import FindingAuthor, FindingKind
 from drone_graph.prompts import load_hivemind
+from drone_graph.orchestrator.redaction import redact
 from drone_graph.signals import SignalStore
 from drone_graph.substrate import Substrate
 from drone_graph.terminal import Terminal, TerminalDead, TerminalTimeout
@@ -138,6 +139,10 @@ DEFAULT_EMERGENT_LOADOUT = [
     "cm_acquire_file",
     "cm_release_file",
     "cm_install_package",
+    "cm_browser",
+    "cm_list_personas",
+    "cm_create_persona",
+    "cm_use_persona",
 ]
 
 # Tools that imply this drone needs a real bash terminal.
@@ -218,7 +223,7 @@ class _TerminalBox:
     """Holds the drone's current terminal, letting tool dispatchers swap it on death."""
 
     def __init__(self) -> None:
-        self._terminal: Terminal = Terminal()
+        self._terminal: Terminal = Terminal(env=_scrubbed_shell_env())
 
     def get(self) -> Terminal:
         return self._terminal
@@ -228,13 +233,32 @@ class _TerminalBox:
             self._terminal.close()
         except Exception:  # noqa: BLE001 - best-effort cleanup of a dead shell
             pass
-        self._terminal = Terminal()
+        self._terminal = Terminal(env=_scrubbed_shell_env())
 
     def close(self) -> None:
         try:
             self._terminal.close()
         except Exception:  # noqa: BLE001
             pass
+
+
+def _scrubbed_shell_env() -> dict[str, str]:
+    """Env for a drone's bash terminal.
+
+    Inherits the drone subprocess's env (already scrubbed for isolated
+    drones by the scheduler), then drops anything that would re-leak the
+    provider API key: the canonical ``ANTHROPIC_API_KEY`` /
+    ``OPENAI_API_KEY`` plus our side-channel ``DRONE_GRAPH_PROVIDER_KEY``.
+
+    Operator-identity drones intentionally inherit the keys — the policy
+    decision is upstream (scheduler chose passthrough mode).
+    """
+    env = dict(os.environ)
+    if env.get("DRONE_GRAPH_IDENTITY_MODE") == "operator":
+        return env
+    for k in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "DRONE_GRAPH_PROVIDER_KEY"):
+        env.pop(k, None)
+    return env
 
 
 def _resolve_loadout(gap: Gap) -> list[str]:
@@ -406,6 +430,10 @@ def run_drone(
     turns_used = 0
     error: str | None = None
     outcome = "max_turns"  # default if nothing terminates
+    # IDs of operator->drone chat findings already injected into the
+    # message stream — so we don't re-inject the same operator nudge on
+    # every turn.
+    seen_chat_ids: set[str] = set()
 
     if tape is not None:
         tape.emit(
@@ -549,6 +577,10 @@ def run_drone(
             tool_results: list[dict[str, Any]] = []
             for call in resp.tool_calls:
                 content = _dispatch_one(call, state)
+                # Identity firewall: scrub the operator's name / email /
+                # handle from anything the drone is about to read. No-op
+                # when this drone is in operator-identity mode.
+                content = redact(content)
                 tool_results.append(
                     {
                         "type": "tool_result",
@@ -559,6 +591,14 @@ def run_drone(
 
             turns_remaining = max_turns - turns_used
             user_content: list[dict[str, Any]] = list(tool_results)
+            # Inject any operator messages that arrived during the turn so
+            # the drone reads them at the next turn boundary even if it
+            # never called cm_browser.await_operator. Mark IDs as seen so
+            # we don't re-inject on subsequent turns.
+            for chat_text in _drain_operator_chat(store, gap.id, seen_chat_ids):
+                user_content.append(
+                    {"type": "text", "text": f"[operator chat] {chat_text}"}
+                )
             user_content.append({"type": "text", "text": _turn_reminder(turns_remaining)})
             messages.append({"role": "user", "content": user_content})
 
@@ -584,6 +624,15 @@ def run_drone(
             terminal_box.close()
         if heartbeat is not None:
             heartbeat.stop()
+        # Best-effort browser cleanup. Closes any Chromium contexts this
+        # drone opened and releases its browser_slot claim so the next
+        # drone in the queue can come up.
+        try:
+            from drone_graph.tools.builtins.browser.tool import cleanup_for_drone
+
+            cleanup_for_drone(drone_id, signals)
+        except Exception:  # noqa: BLE001
+            pass
         if signals is not None:
             signals.release_all_for_drone(drone_id)
 
@@ -665,6 +714,32 @@ def run_drone(
         turns_used=turns_used,
         error=error,
     )
+
+
+def _drain_operator_chat(
+    store: GapStore, gap_id: str, seen: set[str]
+) -> list[str]:
+    """Pull any new operator->drone chat findings for this gap, mark them
+    seen, and return their text bodies. Latest 50 findings only — bounded
+    so this can't slow turn boundaries down in long-running swarms.
+    """
+    try:
+        recent = store.recent_findings(limit=50)
+    except Exception:  # noqa: BLE001 - poll is best-effort
+        return []
+    out: list[str] = []
+    for f in recent:
+        if f.id in seen:
+            continue
+        if f.kind != FindingKind.chat_with_drone:
+            continue
+        if f.author != FindingAuthor.user:
+            continue
+        if gap_id not in (f.affected_gap_ids or []):
+            continue
+        seen.add(f.id)
+        out.append(f.summary)
+    return out
 
 
 def _dispatch_one(call: ToolCall, state: _RuntimeState) -> str:
