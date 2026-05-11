@@ -201,7 +201,7 @@ export function FindingsGraph() {
             finding: recent[idx],
             x: n.x + Math.cos(angle) * ringR,
             y: n.y + Math.sin(angle) * ringR,
-            r: 4,
+            r: 5,
           });
           idx++;
         }
@@ -373,7 +373,11 @@ export function FindingsGraph() {
   function findSatelliteAt(cx: number, cy: number): SatellitePos | null {
     const [x, y] = clientToWorld(cx, cy);
     let best: SatellitePos | null = null;
-    let bestD = 10;
+    // Hit radius generous enough that a finding satellite (drawn at r=5)
+    // can be clicked anywhere within ~14 world units. Smaller targets
+    // are frustrating; the fallback gap hit threshold is 22 so we still
+    // leave a margin between the two.
+    let bestD = 14;
     for (const s of satellites) {
       const d = Math.hypot(s.x - x, s.y - y);
       if (d < bestD) {

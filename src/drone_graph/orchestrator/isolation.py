@@ -39,6 +39,11 @@ _ENV_ALLOWLIST = frozenset({
     "TZ", "TERM",
     "PYTHONUNBUFFERED",
     "TMPDIR",
+    # Substrate connection vars — every drone reads/writes the graph and
+    # signals db; without these the drone can't function at all. Defaults
+    # exist in runner.py but a non-default setup (custom Neo4j host /
+    # password) would silently lose them.
+    "NEO4J_URI", "NEO4J_USER", "NEO4J_PASSWORD",
 })
 
 # DRONE_GRAPH_* are always passed through (substrate, signals, tape, …).

@@ -668,6 +668,12 @@ class Scheduler:
                 worker_model = entry.vendor_model_id
             except Exception:
                 pass
+        # Drone subprocesses run in their own cwd (scratch workspace for
+        # isolated drones, operator cwd for granted ones), so every path
+        # we hand them must be ABSOLUTE — otherwise tape writes and
+        # signal-db lookups resolve inside the drone's sandbox and the
+        # scheduler never sees the activity (cost meter stays at $0,
+        # event tailers find nothing).
         cmd = [
             sys.executable,
             "-m",
@@ -677,8 +683,8 @@ class Scheduler:
             "--model", worker_model,
             "--max-turns", str(max_turns),
             "--tick", str(self.tick),
-            "--tape-path", str(tape_path),
-            "--signal-db", str(self.signal_db),
+            "--tape-path", str(Path(tape_path).resolve()),
+            "--signal-db", str(Path(self.signal_db).resolve()),
             "--run-id", self.run_id,
         ]
         # Identity firewall: by default every drone gets an isolated
