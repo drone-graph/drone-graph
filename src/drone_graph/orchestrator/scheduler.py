@@ -57,7 +57,7 @@ from drone_graph.orchestrator.tape import EventTape
 from drone_graph.signals import SQLiteSignalStore, default_db_path
 from drone_graph.substrate import Substrate
 
-DEFAULT_MAX_WORKERS = 4
+DEFAULT_MAX_WORKERS = 20
 DEFAULT_TICK_S = 1.0
 DEFAULT_ALIGNMENT_EVERY = 3
 DEFAULT_MAX_GF = 15

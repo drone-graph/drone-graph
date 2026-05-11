@@ -182,6 +182,11 @@ function DroneRow(props: { d: ActiveDrone }) {
         <span class="faint">·</span>
         <span class="faint">${cost()}</span>
       </div>
+      <Show when={(props.d.last_tool_calls?.length ?? 0) > 0}>
+        <div class="now" title="tools called on the drone's most recent turn">
+          now: <span class="now-tools">{(props.d.last_tool_calls ?? []).join(", ")}</span>
+        </div>
+      </Show>
       <Show when={props.d.last_command}>
         <div class="cmd" title={props.d.last_command ?? ""}>
           $ {oneLine(props.d.last_command ?? "")}
@@ -233,6 +238,17 @@ function DroneRow(props: { d: ActiveDrone }) {
           color: var(--fg-0);
         }
         .vitals { font-size: var(--fs-xs); }
+        .now {
+          font-size: 10.5px;
+          color: var(--fg-1);
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .now-tools {
+          color: var(--cobalt-soft);
+          font-family: var(--font-mono);
+        }
         .cmd {
           color: var(--cobalt-soft);
           font-size: var(--fs-xs);

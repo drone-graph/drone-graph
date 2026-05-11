@@ -95,6 +95,56 @@ def _narrate_drone_exit(
     except Exception:
         return None
 
+def _narrate_drone_progress(
+    *,
+    gap: Gap,
+    turn: int,
+    recent_tool_calls: list[str],
+    provider: Provider,
+) -> str | None:
+    """Mid-run narration: a 1-2 sentence "what I'm doing right now" line.
+
+    Fires at turn checkpoints (3, 8, 13 …) on emergent workers. Cheap
+    nano-tier call. Lets the operator see progress without waiting for
+    exit narration — especially useful when ``max_workers`` is high and
+    workers run for many turns. Returns ``None`` on any failure;
+    narration is observability, not correctness.
+    """
+    try:
+        from drone_graph.gaps.records import ModelTier
+        from drone_graph.model_registry.registry import ModelRegistry
+
+        reg = ModelRegistry.load_auto()
+        if not reg.is_populated:
+            return None
+        entry = reg.resolve_for_tier(ModelTier.nano, provider)
+        narrator = make_client(entry.provider, entry.vendor_model_id)
+
+        intent_short = gap.intent[:400]
+        # Just the last 10 tool-call names — enough signal, doesn't blow
+        # the prompt up. The narrator infers intent from the sequence.
+        calls = ", ".join(recent_tool_calls[-10:]) or "(no tool calls yet)"
+        user_msg = (
+            f"Gap I'm working on:\n{intent_short}\n\n"
+            f"I'm at turn {turn}. Recent tool calls: {calls}.\n\n"
+            "Write 1-2 sentences for the operator's chat panel describing "
+            "what I'm currently doing. Present tense, first person. No "
+            "technical jargon, no preamble, no markdown."
+        )
+        resp = narrator.chat(
+            system=_NARRATION_SYSTEM,
+            messages=[{"role": "user", "content": user_msg}],
+            tools=[],
+        )
+        text = (resp.text or "").strip()
+        for prefix in ('"', "'", "**", "- "):
+            if text.startswith(prefix):
+                text = text[len(prefix):].lstrip()
+        return text or None
+    except Exception:
+        return None
+
+
 if TYPE_CHECKING:
     from drone_graph.orchestrator.tape import EventTape as EventTape
 
@@ -131,6 +181,12 @@ DEFAULT_MAX_TURNS = 20
 DEFAULT_COMMAND_TIMEOUT_S = 60.0
 DEFAULT_CLAIM_TTL_S = 60.0
 DEFAULT_HEARTBEAT_PERIOD_S = 20.0
+
+# Turn numbers at which an emergent worker emits a mid-run narration so
+# the operator's chat panel shows progress while a long drone grinds.
+# Spaced so a typical 8-12 turn worker emits 1-2 status lines and a
+# 20-turn worker emits 4. Each line costs a few cents (nano-tier).
+_NARRATE_AT_TURNS = frozenset({3, 8, 13, 18})
 
 # Tools every emergent (non-preset) gap gets unless the gap explicitly
 # overrides ``tool_loadout``. Universal cm_* query tools are added on top.
@@ -451,6 +507,9 @@ def run_drone(
     # guard exits the drone after 3 in a row (almost always an output
     # loop, not legitimate progress).
     cap_hits = 0
+    # Running history of tool-call names the drone has made, used by the
+    # mid-run narrator to give the operator a plain-English status line.
+    tool_call_history: list[str] = []
 
     if tape is not None:
         tape.emit(
@@ -569,6 +628,7 @@ def run_drone(
             if signals is not None and run_id is not None:
                 ceiling_crossed = not signals.add_cost(run_id, turn_cost)
 
+            tool_call_history.extend(tc.name for tc in resp.tool_calls)
             if tape is not None:
                 tape.emit(
                     "drone.turn",
@@ -580,6 +640,25 @@ def run_drone(
                     cost_usd=turn_cost,
                     tool_calls=[tc.name for tc in resp.tool_calls],
                 )
+                # Mid-run narration. Fires for emergent workers at turns
+                # 3, 8, 13, … — gives the operator a plain-English status
+                # line in the chat while a long-running drone is still
+                # mid-flight. Cheap nano-tier call; failures swallowed.
+                if not is_preset and turns_used in _NARRATE_AT_TURNS:
+                    progress = _narrate_drone_progress(
+                        gap=gap,
+                        turn=turns_used,
+                        recent_tool_calls=tool_call_history,
+                        provider=client.provider,
+                    )
+                    if progress:
+                        tape.emit(
+                            "drone.narrate",
+                            drone_id=drone_id,
+                            gap_id=gap.id,
+                            outcome="in_progress",
+                            text=progress,
+                        )
                 if log_llm:
                     tape.emit(
                         "llm.response",

@@ -284,6 +284,9 @@ class DroneTapeTailer:
                     v.tokens_out = tout
                 if isinstance(cost, (int, float)):
                     v.cost_usd = float(cost)
+                tcs = rec.get("tool_calls")
+                if isinstance(tcs, list):
+                    v.last_tool_calls = [str(t) for t in tcs if t]
             elif ev == "tool.terminal_run":
                 cmd = rec.get("cmd") or rec.get("command")
                 if isinstance(cmd, str):
@@ -381,6 +384,7 @@ class _DroneVitals:
         "turn",
         "max_turns",
         "last_command",
+        "last_tool_calls",
         "tail",
         "cost_usd",
         "tokens_in",
@@ -392,6 +396,11 @@ class _DroneVitals:
         self.turn: int | None = None
         self.max_turns: int | None = None
         self.last_command: str | None = None
+        # Names of the tools the drone called on its most recent turn.
+        # Surfaced on the active-drones rail as "now: cm_browser" etc.
+        # so the operator can see what each drone is doing without
+        # waiting for the drone to exit and narrate.
+        self.last_tool_calls: list[str] = []
         self.tail: list[str] = []
         self.cost_usd: float | None = None
         self.tokens_in: int | None = None

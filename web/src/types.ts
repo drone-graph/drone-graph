@@ -85,6 +85,9 @@ export interface ActiveDrone {
   max_turns: number | null;
   last_command: string | null;
   tail_lines: string[];
+  /** Tool names the drone called on its most recent turn. Rendered as
+   *  a "now: cm_browser, terminal_run" line on the active-drones rail. */
+  last_tool_calls?: string[];
   cost_usd: number | null;
   tokens_in: number | null;
   tokens_out: number | null;

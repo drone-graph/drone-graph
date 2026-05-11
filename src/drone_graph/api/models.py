@@ -110,6 +110,11 @@ class ActiveDroneDTO(BaseModel):
     max_turns: int | None = None
     last_command: str | None = None
     tail_lines: list[str] = Field(default_factory=list)
+    # Tool names the drone called on its most recent turn. Rendered as a
+    # "now: cm_browser, terminal_run" line on the active-drones rail so
+    # the operator can see live activity without waiting for exit
+    # narration.
+    last_tool_calls: list[str] = Field(default_factory=list)
     cost_usd: float | None = None
     tokens_in: int | None = None
     tokens_out: int | None = None

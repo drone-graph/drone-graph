@@ -250,7 +250,7 @@ class SwarmController:
             run_id=self.run_id,
             out_dir=self.out_dir,
             tape=self.tape,
-            max_workers=4,
+            max_workers=20,
             tick_s=ACTIVE_TICK_S,
             align_every=3,
             max_gf=1_000_000,  # effectively unbounded in infinite mode
@@ -420,6 +420,7 @@ class SwarmController:
                     "max_turns": getattr(vitals, "max_turns", None) if vitals else None,
                     "last_command": getattr(vitals, "last_command", None) if vitals else None,
                     "tail_lines": list(getattr(vitals, "tail", []) or []) if vitals else [],
+                    "last_tool_calls": list(getattr(vitals, "last_tool_calls", []) or []) if vitals else [],
                     "cost_usd": getattr(vitals, "cost_usd", None) if vitals else None,
                     "tokens_in": getattr(vitals, "tokens_in", None) if vitals else None,
                     "tokens_out": getattr(vitals, "tokens_out", None) if vitals else None,
