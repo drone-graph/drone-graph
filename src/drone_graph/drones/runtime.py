@@ -107,7 +107,11 @@ from drone_graph.drones.providers import (
     make_client,
 )
 from drone_graph.gaps import Finding, Gap, GapStore
-from drone_graph.gaps.records import FindingAuthor, FindingKind
+from drone_graph.gaps.records import (
+    DEFAULT_MAX_OUTPUT_TOKENS,
+    FindingAuthor,
+    FindingKind,
+)
 from drone_graph.prompts import load_hivemind
 from drone_graph.orchestrator.redaction import redact
 from drone_graph.signals import SignalStore
@@ -134,6 +138,7 @@ DEFAULT_EMERGENT_LOADOUT = [
     "terminal_run",
     "cm_read_gap",
     "cm_write_finding",
+    "cm_attempted_routes",
     "cm_register_tool",
     "cm_request_tool",
     "cm_acquire_file",
@@ -434,6 +439,17 @@ def run_drone(
     # message stream — so we don't re-inject the same operator nudge on
     # every turn.
     seen_chat_ids: set[str] = set()
+    # Per-turn output cap, resolved from gap.max_output_tokens or the
+    # tier default. Used both for the SDK call and for the runaway guard.
+    turn_max_tokens = (
+        int(gap.max_output_tokens)
+        if gap.max_output_tokens
+        else DEFAULT_MAX_OUTPUT_TOKENS.get(gap.model_tier, 4096)
+    )
+    # Consecutive turns where the model hit the output cap. The runaway
+    # guard exits the drone after 3 in a row (almost always an output
+    # loop, not legitimate progress).
+    cap_hits = 0
 
     if tape is not None:
         tape.emit(
@@ -499,13 +515,53 @@ def run_drone(
                     tools=tool_defs,
                 )
             try:
-                resp = client.chat(system=system, messages=messages, tools=tool_defs)
+                resp = client.chat(
+                    system=system,
+                    messages=messages,
+                    tools=tool_defs,
+                    max_tokens=turn_max_tokens,
+                )
             except Exception as e:  # noqa: BLE001 - bubble client errors up as drone error
                 error = f"client error: {type(e).__name__}: {e}"
                 outcome = "error"
                 break
             usage_total.tokens_in += resp.usage.tokens_in
             usage_total.tokens_out += resp.usage.tokens_out
+
+            # Runaway-output guard: a drone that emits ``tokens_out >=
+            # max_tokens`` three turns in a row is almost certainly stuck
+            # in an output loop (generating max-length essays / repeating
+            # itself). Exit with a structured ``fail`` so GF can react,
+            # rather than burning the rest of the turn budget.
+            if resp.usage.tokens_out >= turn_max_tokens - 8:
+                cap_hits += 1
+            else:
+                cap_hits = 0
+            if cap_hits >= 3 and not is_preset:
+                ro = store.apply_fail(
+                    gap_id=gap.id,
+                    summary=(
+                        f"drone {drone_id[:8]} exited at turn {turns_used} after "
+                        f"3 consecutive max-output-token turns "
+                        f"(cap={turn_max_tokens}). Likely an output-generation "
+                        "loop or runaway synthesis. GF should decompose the gap "
+                        "into smaller leaves or lower its max_output_tokens."
+                    ),
+                    tick=tick,
+                )
+                state.terminate = (ro, "fail")
+                state.findings_written += 1
+                outcome = "fail"
+                if tape is not None:
+                    tape.emit(
+                        "drone.runaway_output",
+                        drone_id=drone_id,
+                        gap_id=gap.id,
+                        turn=turns_used,
+                        cap=turn_max_tokens,
+                        finding_id=ro.id,
+                    )
+                break
 
             turn_cost = cost_usd(client.provider, client.model, resp.usage)
             ceiling_crossed = False

@@ -43,6 +43,7 @@ class _FakeChatClient:
         system: str,
         messages: list[dict[str, object]],
         tools: list[dict[str, object]],
+        max_tokens: int | None = None,
     ) -> ChatResponse:
         self.turn += 1
         self.captured_messages.append(messages)

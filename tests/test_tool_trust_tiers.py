@@ -25,6 +25,7 @@ class _CaptureToolsClient:
         system: str,
         messages: list[dict[str, object]],
         tools: list[dict[str, object]],
+        max_tokens: int | None = None,
     ) -> ChatResponse:
         if self.first_turn_tools is None:
             self.first_turn_tools = list(tools)

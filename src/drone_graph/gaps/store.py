@@ -104,12 +104,15 @@ class GapStore:
         return [_gap_from_node(r["g"]) for r in rows]
 
     def leaves(self) -> list[Gap]:
-        """Active emergent leaves: unfilled non-preset gaps with no non-retired
-        children. Preset gaps are excluded — they're not work for emergent
-        worker drones."""
+        """Active emergent leaves: unfilled non-preset non-paused gaps with no
+        non-retired children. Preset gaps are excluded — they're not work for
+        emergent worker drones. Paused gaps are excluded — the operator
+        clicked "not right now" and the scheduler will steer around them
+        until ``apply_unpause`` clears the flag."""
         rows = self.substrate.execute_read(
             "MATCH (g:Gap {status: $unfilled}) "
             "WHERE g.preset_kind IS NULL "
+            "  AND COALESCE(g.paused, false) = false "
             "  AND NOT EXISTS { "
             "    MATCH (g)-[:PARENT_OF]->(c:Gap) WHERE c.status <> $retired "
             "  } "
@@ -186,6 +189,11 @@ class GapStore:
                 tool_suggestions=list(c.get("tool_suggestions", []) or []),
                 reasoning_effort=(c.get("reasoning_effort") or None),
                 uses_operator_identity=bool(c.get("uses_operator_identity", False)),
+                max_output_tokens=(
+                    int(c["max_output_tokens"])
+                    if c.get("max_output_tokens") not in (None, "")
+                    else None
+                ),
             )
             for c in children
             if c["intent"].strip().lower() not in existing_intents_lc
@@ -216,7 +224,9 @@ class GapStore:
             "  reasoning_effort: child.reasoning_effort, "
             "  uses_operator_identity: child.uses_operator_identity, "
             "  identity_approved: false, "
-            "  identity_denied_reason: null "
+            "  identity_denied_reason: null, "
+            "  max_output_tokens: child.max_output_tokens, "
+            "  paused: false "
             "}) "
             "CREATE (p)-[:PARENT_OF]->(c) "
             "WITH p, collect(c.id) AS child_ids "
@@ -248,6 +258,7 @@ class GapStore:
                     "tool_suggestions": list(c.tool_suggestions),
                     "reasoning_effort": c.reasoning_effort,
                     "uses_operator_identity": c.uses_operator_identity,
+                    "max_output_tokens": c.max_output_tokens,
                 }
                 for c in child_records
             ],
@@ -277,6 +288,7 @@ class GapStore:
         tool_suggestions: list[str] | None = None,
         reasoning_effort: str | None = None,
         uses_operator_identity: bool = False,
+        max_output_tokens: int | None = None,
     ) -> Finding:
         new_gap = Gap(
             intent=intent,
@@ -286,6 +298,7 @@ class GapStore:
             tool_suggestions=list(tool_suggestions or []),
             reasoning_effort=reasoning_effort,
             uses_operator_identity=uses_operator_identity,
+            max_output_tokens=max_output_tokens,
         )
         finding = Finding(
             tick=tick,
@@ -304,7 +317,9 @@ class GapStore:
             "  reasoning_effort: $reasoning_effort, "
             "  uses_operator_identity: $uses_operator_identity, "
             "  identity_approved: false, "
-            "  identity_denied_reason: null "
+            "  identity_denied_reason: null, "
+            "  max_output_tokens: $max_output_tokens, "
+            "  paused: false "
             "}) "
             "CREATE (f:Finding { "
             "  id: $finding_id, tick: $tick, author: $author, kind: $kind, "
@@ -325,6 +340,7 @@ class GapStore:
             tool_suggestions=list(new_gap.tool_suggestions),
             reasoning_effort=new_gap.reasoning_effort,
             uses_operator_identity=new_gap.uses_operator_identity,
+            max_output_tokens=new_gap.max_output_tokens,
             finding_id=finding.id,
             tick=tick,
             author=author.value,
@@ -699,6 +715,58 @@ class GapStore:
             ),
             affected_gap_ids=[gap.id],
             artefact_paths=[f"identity-deny:{gap.id}"],
+        )
+
+    # ---- Pause / unpause -----------------------------------------------
+    #
+    # Distinct from retire. A paused gap is unfilled and the scheduler
+    # refuses to dispatch against it, but it's expected to be resumed
+    # later. Used by the action-inbox "not right now" button.
+
+    def apply_pause(
+        self,
+        *,
+        gap_id: str,
+        tick: int,
+        reason: str = "",
+        author: FindingAuthor = FindingAuthor.user,
+    ) -> Finding:
+        gap = self.get(gap_id)
+        if gap is None:
+            raise ValueError(f"no gap with id {gap_id}")
+        self.substrate.execute_write(
+            "MATCH (g:Gap {id: $id}) SET g.paused = true",
+            id=gap.id,
+        )
+        msg = f"Gap {gap.id[:8]} paused by operator."
+        if reason:
+            msg += f" Reason: {reason}"
+        return self.append_finding(
+            tick=tick, author=author, kind=FindingKind.note,
+            summary=msg,
+            affected_gap_ids=[gap.id],
+            artefact_paths=[f"gap-paused:{gap.id}"],
+        )
+
+    def apply_unpause(
+        self,
+        *,
+        gap_id: str,
+        tick: int,
+        author: FindingAuthor = FindingAuthor.user,
+    ) -> Finding:
+        gap = self.get(gap_id)
+        if gap is None:
+            raise ValueError(f"no gap with id {gap_id}")
+        self.substrate.execute_write(
+            "MATCH (g:Gap {id: $id}) SET g.paused = false",
+            id=gap.id,
+        )
+        return self.append_finding(
+            tick=tick, author=author, kind=FindingKind.note,
+            summary=f"Gap {gap.id[:8]} resumed by operator.",
+            affected_gap_ids=[gap.id],
+            artefact_paths=[f"gap-unpaused:{gap.id}"],
         )
 
     # ---- Bootstrap ----

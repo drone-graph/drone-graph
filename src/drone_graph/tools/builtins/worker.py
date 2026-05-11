@@ -195,6 +195,25 @@ def _detect_realworld_action(cmd: str) -> dict[str, str] | None:
     return None
 
 
+def _has_attempted_routes(ctx: DroneContext) -> bool:
+    """True if this gap has at least one ``attempted_routes`` finding
+    authored by the current drone in the recent tail. Gate on
+    requires_user_action escalation."""
+    try:
+        recent = ctx.store.recent_findings(limit=50)
+    except Exception:  # noqa: BLE001
+        return True  # fail-open if substrate read fails
+    for f in recent:
+        if f.kind != FindingKind.attempted_routes:
+            continue
+        if f.author != FindingAuthor.worker:
+            continue
+        if ctx.gap_id not in (f.affected_gap_ids or []):
+            continue
+        return True
+    return False
+
+
 def _parse_trust_tier_arg(args: dict[str, Any]) -> TrustTier | str:
     raw = args.get("trust_tier")
     if raw is None or raw == "":
@@ -451,6 +470,125 @@ def cm_read_gap(args: dict[str, Any], ctx: DroneContext) -> ToolResult:
 
 
 @register_tool(
+    "cm_attempted_routes",
+    (
+        "Record the cheap workarounds you tried (or seriously considered "
+        "and ruled out) before escalating an obstacle to the operator. "
+        "REQUIRED before cm_write_finding(kind='requires_user_action'). "
+        "The substrate's comparative advantage is enumeration: the world "
+        "is full of free signup paths, open APIs, public contact forms, "
+        "free-tier services, ID-less phone-number providers, no-KYC "
+        "payment rails. Most walls have at least three doors you "
+        "haven't tried. List at least three you tried or rejected with "
+        "specific reasons. Vague entries ('tried alternatives') are "
+        "rejected — alignment will flag a drone that escalates with "
+        "thin attempted_routes."
+    ),
+    {
+        "type": "object",
+        "properties": {
+            "obstacle": {
+                "type": "string",
+                "description": (
+                    "One sentence describing the wall you hit "
+                    "(e.g. 'need to send email to 3 cities but no SMTP "
+                    "credential available')."
+                ),
+            },
+            "attempts": {
+                "type": "array",
+                "minItems": 3,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "route": {
+                            "type": "string",
+                            "description": (
+                                "Concrete alternative you tried or evaluated "
+                                "(e.g. 'sign up for free Mailgun account', "
+                                "'submit via city contact form using "
+                                "cm_browser', 'use SendGrid sandbox'). Be "
+                                "specific — a real provider/path, not a "
+                                "category."
+                            ),
+                        },
+                        "outcome": {
+                            "type": "string",
+                            "description": (
+                                "What happened. 'succeeded' (then why are "
+                                "you escalating?), 'tried, blocked by X', "
+                                "'evaluated, rejected because Y'."
+                            ),
+                        },
+                    },
+                    "required": ["route", "outcome"],
+                },
+            },
+        },
+        "required": ["obstacle", "attempts"],
+    },
+)
+def cm_attempted_routes(args: dict[str, Any], ctx: DroneContext) -> ToolResult:
+    obstacle = str(args.get("obstacle", "")).strip()
+    attempts = args.get("attempts") or []
+    if not obstacle:
+        return ToolResult(content="ERROR: obstacle required")
+    if not isinstance(attempts, list) or len(attempts) < 3:
+        return ToolResult(
+            content=(
+                "ERROR: list at least 3 attempts. The whole point of this "
+                "tool is to enforce enumeration before escalation. If you "
+                "genuinely cannot think of three, you have not tried hard "
+                "enough — go research free-tier providers, public APIs, "
+                "computer-use signup paths, side channels."
+            )
+        )
+    # Validate each entry has substance (non-empty, not vague boilerplate).
+    cleaned: list[dict[str, str]] = []
+    for a in attempts:
+        if not isinstance(a, dict):
+            continue
+        route = str(a.get("route", "")).strip()
+        outcome = str(a.get("outcome", "")).strip()
+        if len(route) < 10 or len(outcome) < 5:
+            continue
+        cleaned.append({"route": route, "outcome": outcome})
+    if len(cleaned) < 3:
+        return ToolResult(
+            content=(
+                "ERROR: at least 3 attempts must each have a substantive "
+                "route (>=10 chars) and outcome (>=5 chars). Vague entries "
+                "like 'tried alternatives' don't count."
+            )
+        )
+    summary_lines = [f"Obstacle: {obstacle}", "Tried:"]
+    for c in cleaned:
+        summary_lines.append(f"  - {c['route']} -> {c['outcome']}")
+    f = ctx.store.append_finding(
+        tick=ctx.tick,
+        author=FindingAuthor.worker,
+        kind=FindingKind.attempted_routes,
+        summary="\n".join(summary_lines),
+        affected_gap_ids=[ctx.gap_id],
+    )
+    if ctx.tape is not None:
+        ctx.tape.emit(
+            "tool.attempted_routes",
+            drone_id=ctx.drone_id,
+            gap_id=ctx.gap_id,
+            finding_id=f.id,
+            count=len(cleaned),
+        )
+    return ToolResult(
+        content=(
+            f"attempted_routes recorded: {f.id}. You may now escalate "
+            "via cm_write_finding(kind='requires_user_action') if all "
+            "alternatives genuinely failed."
+        ),
+    )
+
+
+@register_tool(
     "cm_write_finding",
     (
         "Deposit a finding into the collective mind. Use kind='fill' when the "
@@ -540,6 +678,21 @@ def cm_write_finding(args: dict[str, Any], ctx: DroneContext) -> ToolResult:
             outcome="fail",
         )
     if kind == "requires_user_action":
+        # Decree: drone must have called cm_attempted_routes for this
+        # gap before escalating. The whole point is to force enumeration
+        # of cheap workarounds — the world has more side doors than any
+        # one drone will find without trying. Look for a recent
+        # attempted_routes finding on this gap; if absent, refuse.
+        if not _has_attempted_routes(ctx):
+            return ToolResult(
+                content=(
+                    "ERROR: cannot file a requires_user_action block before "
+                    "calling cm_attempted_routes for this gap. List at least "
+                    "3 cheap workarounds you tried (or seriously considered "
+                    "and ruled out), then escalate. The wall is a list of "
+                    "doors you haven't tried yet."
+                ),
+            )
         # The drone is blocked on a human action. Persist the finding,
         # leave the gap unfilled, and exit. The Mission Control UI shows
         # the block in its Action Inbox; when the operator resolves it,

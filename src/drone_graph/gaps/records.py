@@ -29,6 +29,21 @@ class ModelTier(StrEnum):
     frontier = "frontier"
 
 
+# Default per-turn output-token cap, keyed by tier. Tier-aware so a
+# nano-tier "rename this file" drone isn't paying for 16k of synthesis
+# headroom it'll never use, while a frontier-tier research synthesis
+# can produce a long writeup without artificially truncating. GF can
+# override via ``Gap.max_output_tokens`` when a gap's work shape calls
+# for it. Pair with the runtime's runaway guard.
+DEFAULT_MAX_OUTPUT_TOKENS: dict[ModelTier, int] = {
+    ModelTier.nano: 2048,
+    ModelTier.mini: 2048,
+    ModelTier.standard: 4096,
+    ModelTier.advanced: 8192,
+    ModelTier.frontier: 16384,
+}
+
+
 class FindingAuthor(StrEnum):
     gap_finding = "gap_finding"
     alignment = "alignment"
@@ -75,6 +90,14 @@ class FindingKind(StrEnum):
     # ``note`` finding referencing the block; Gap Finding picks it up next
     # tick and re-dispatches.
     requires_user_action = "requires_user_action"
+    # Evidence that a drone tried (or considered + ruled out) alternative
+    # routes before escalating a ``requires_user_action`` block. The
+    # ``cm_attempted_routes`` builtin writes this; the gate on
+    # ``cm_write_finding(kind=requires_user_action)`` requires at least
+    # one of these on the current gap from this drone. The point is to
+    # force the swarm's comparative advantage — enumeration of cheap
+    # workarounds — before asking the human.
+    attempted_routes = "attempted_routes"
     # Direct chat message between the operator and a specific live drone.
     # author=user: the operator typed this into the drone's chat panel; the
     # drone reads it via cm_browser.await_operator or sees it injected at
@@ -128,6 +151,19 @@ class Gap(BaseModel):
     # doesn't support thinking, this value is silently ignored at dispatch
     # time so GF can set it without worrying about model capability.
     reasoning_effort: str | None = None
+    # Optional per-gap cap on the model's per-turn output tokens. ``None``
+    # means "use the per-tier default" (see ``DEFAULT_MAX_OUTPUT_TOKENS``).
+    # GF sets this on gaps whose work shape calls for it: a small click-
+    # through gap can drop to 1024; a research-synthesis gap may want
+    # 16384. Pair with the runtime's runaway guard (3 cap-hits in a row
+    # exits the drone) which catches mis-budgeted gaps cheaply.
+    max_output_tokens: int | None = None
+    # Operator-side pause: distinct from ``status='retired'``. A paused
+    # gap stays unfilled but the scheduler refuses to dispatch against
+    # it until the operator clears the pause. Used by the action-inbox
+    # "not right now" button so the swarm doesn't keep retrying a gap
+    # the operator wants to revisit later.
+    paused: bool = False
     # Identity policy. When True, Gap Finding has judged this gap genuinely
     # requires the operator's own identity (their GitHub account, their
     # shell, their cwd, their saved creds) to complete. The scheduler

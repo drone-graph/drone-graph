@@ -45,6 +45,7 @@ class ChatClient(Protocol):
         system: str,
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]],
+        max_tokens: int | None = None,
     ) -> ChatResponse: ...
 
 
@@ -92,11 +93,12 @@ def _retryable_chat(
         system: str,
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]],
+        max_tokens: int | None = None,
     ) -> ChatResponse:
         attempt = 0
         while True:
             try:
-                return cast(ChatResponse, fn(system, messages, tools))
+                return cast(ChatResponse, fn(system, messages, tools, max_tokens))
             except Exception as e:  # noqa: BLE001 - filter by transient class below
                 if not _is_transient(e) or attempt >= max_retries:
                     raise
@@ -220,6 +222,7 @@ class AnthropicClient:
         system: str,
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]],
+        max_tokens: int | None = None,
     ) -> ChatResponse:
         # Ephemeral prompt caching: the system prompt, tools list, and prior
         # message history all repeat verbatim every turn within a drone run.
@@ -230,7 +233,7 @@ class AnthropicClient:
         # covers any drone's full turn budget.
         kwargs: dict[str, Any] = {
             "model": self.model,
-            "max_tokens": 4096,
+            "max_tokens": int(max_tokens) if max_tokens else 4096,
             "system": [
                 {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}
             ],
@@ -385,6 +388,7 @@ class OpenAIClient:
         system: str,
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]],
+        max_tokens: int | None = None,
     ) -> ChatResponse:
         oai_messages: list[dict[str, Any]] = [{"role": "system", "content": system}]
         oai_messages.extend(drone_messages_to_openai_chat(messages))
@@ -392,7 +396,7 @@ class OpenAIClient:
         kwargs: dict[str, Any] = {
             "model": self.model,
             "messages": cast(Any, oai_messages),
-            "max_tokens": 4096,
+            "max_tokens": int(max_tokens) if max_tokens else 4096,
         }
         if oai_tools:
             kwargs["tools"] = cast(Any, oai_tools)

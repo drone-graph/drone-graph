@@ -153,6 +153,33 @@ ready to be re-attempted. Treat that as the unblock signal and noop on \
 those gaps (no structural edit required — the next worker tick will pick \
 it up).
 
+DENY INTENTS. When the operator declines an inbox item, the note carries \
+a structured intent in its artefact paths. Read it and act accordingly:
+- ``inbox-deny:try_another_way:<block_id>`` — operator agrees with the \
+goal but rejects this means. Treat the original gap as needing a fresh \
+decomposition that excludes the rejected route. Add a constraint to the \
+intent (e.g. "without using operator email"). Decompose into children \
+that satisfy the constraint via swarm-owned capability or public side \
+channels.
+- ``inbox-deny:dont_do_this:<block_id>`` — operator rejects the goal \
+itself. Retire the gap and any sibling gaps that exist only to support it. \
+Do not re-attempt or reformulate. The operator's "no" on scope is final.
+- ``inbox-deny:not_right_now:<block_id>`` — operator wants to revisit \
+later. The substrate has already flipped the gap to paused; do nothing. \
+The next worker dispatch is suppressed until the operator unpauses.
+- ``identity-deny:<gap_id>`` (no intent suffix) — legacy single-button \
+deny on an identity grant. Treat as ``try_another_way``: decompose around \
+the operator-identity requirement using swarm personas + public channels.
+
+SEQUENTIAL DECOMPOSITION (LAZY). When a piece of work requires the \
+operator to do several distinct steps in order (set up an account, paste \
+a key, click a verify link, etc.), do NOT mint all the step-gaps at once. \
+Mint only step 1 with a clear single-action intent. When step 1 fills, \
+you'll see the fill finding next tick — that's your signal to mint step \
+2. This keeps the operator's plate to one thing at a time and lets you \
+adapt step N+1 to what actually happened in step N. The substrate is the \
+state machine; you're its hand-off logic.
+
 Tools available to you:
 - The structural verbs above.
 - Universal cm_* query tools to inspect the substrate. The dispatcher pre-loads \

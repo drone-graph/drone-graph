@@ -68,6 +68,18 @@ def _err_result(name: str, e: Exception) -> ToolResult:
                                 "approves via the action inbox."
                             ),
                         },
+                        "max_output_tokens": {
+                            "type": "integer",
+                            "description": (
+                                "Per-turn output-token cap for the worker. "
+                                "Omit for the tier default (nano/mini 2048, "
+                                "standard 4096, advanced 8192, frontier "
+                                "16384). Drop lower (1024) for narrow "
+                                "click-through gaps; raise for synthesis "
+                                "gaps. A drone that hits the cap 3 turns in "
+                                "a row is auto-exited as runaway."
+                            ),
+                        },
                     },
                     "required": ["intent", "criteria"],
                 },
@@ -135,6 +147,13 @@ def decompose(args: dict[str, Any], ctx: DroneContext) -> ToolResult:
                     "the operator approves via the action inbox."
                 ),
             },
+            "max_output_tokens": {
+                "type": "integer",
+                "description": (
+                    "Per-turn output cap. Omit for tier default. Lower "
+                    "for narrow gaps; raise for synthesis."
+                ),
+            },
         },
         "required": ["intent", "criteria", "rationale"],
     },
@@ -164,6 +183,11 @@ def create(args: dict[str, Any], ctx: DroneContext) -> ToolResult:
             tool_loadout=list(args.get("tool_loadout") or []) or None,
             tool_suggestions=list(args.get("tool_suggestions") or []) or None,
             uses_operator_identity=bool(args.get("uses_operator_identity", False)),
+            max_output_tokens=(
+                int(args["max_output_tokens"])
+                if args.get("max_output_tokens") not in (None, "", 0)
+                else None
+            ),
         )
     except (ValueError, KeyError, TypeError) as e:
         return _err_result("create", e)

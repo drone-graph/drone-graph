@@ -46,6 +46,7 @@ class _WriteThenFillClient:
         system: str,
         messages: list[dict[str, object]],
         tools: list[dict[str, object]],
+        max_tokens: int | None = None,
     ) -> ChatResponse:
         self.turn += 1
         if self.turn == 1:
