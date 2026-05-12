@@ -10,14 +10,20 @@ from drone_graph.substrate import Substrate
 
 @pytest.fixture
 def substrate() -> Iterator[Substrate]:
-    """Real Neo4j substrate, wiped before each test. Skipped if Neo4j is
-    unreachable OR if the database appears to hold a live swarm session
-    (any ``:Persona`` node — these are minted by ``init_collective_mind``
-    only when the real server boots, so their presence is a strong
-    signal that wiping would destroy the operator's work).
+    """Real Neo4j substrate, wiped before AND after each test.
 
-    Override the safety check by setting ``DRONE_GRAPH_TESTS_ALLOW_WIPE=1``
-    in the env — CI runs against a dedicated Neo4j and is happy to wipe.
+    Two protections so the live mission-control DB doesn't get
+    trashed by an accidental ``pytest`` run from a dev machine:
+
+    1. **Live-session detection.** If the DB shows signs of a real
+       session — any ``:Persona`` node (minted by
+       ``init_collective_mind``) — skip the test. Set
+       ``DRONE_GRAPH_TESTS_ALLOW_WIPE=1`` to override (CI / known-empty
+       test DB).
+    2. **Symmetric wipe.** Even when the gate lets us through, we wipe
+       both before AND after the test so we never leave fixture data
+       (e.g. a Gap with ``intent="a"``) lying around for the next
+       ``./start`` to render as a "what is this???" mystery.
     """
     uri = os.environ.get("NEO4J_URI", "bolt://localhost:7687")
     user = os.environ.get("NEO4J_USER", "neo4j")
@@ -29,8 +35,6 @@ def substrate() -> Iterator[Substrate]:
         pytest.skip(f"neo4j not available: {e}")
     try:
         if os.environ.get("DRONE_GRAPH_TESTS_ALLOW_WIPE") != "1":
-            # Heuristic: any Persona node means init_collective_mind ran,
-            # which means this is a real session. Refuse to wipe.
             try:
                 rows = s.execute_read("MATCH (p:Persona) RETURN count(p) AS c")
                 persona_count = int(rows[0]["c"]) if rows else 0
@@ -46,6 +50,16 @@ def substrate() -> Iterator[Substrate]:
                     "DRONE_GRAPH_TESTS_ALLOW_WIPE=1 to override."
                 )
         s.execute_write("MATCH (n) DETACH DELETE n")
-        yield s
+        try:
+            yield s
+        finally:
+            # Wipe AFTER too — don't leave fixture data in the DB. If
+            # the operator later starts a real session against this
+            # Neo4j, init_collective_mind will mint presets + personas
+            # cleanly with no stray "a" gap to confuse the canvas.
+            try:
+                s.execute_write("MATCH (n) DETACH DELETE n")
+            except Exception:
+                pass
     finally:
         s.close()
