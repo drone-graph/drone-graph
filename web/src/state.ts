@@ -9,7 +9,7 @@
 // O(milliseconds) on a local API; the cinematic cost is hidden behind the
 // canvas animation budget.
 
-import { batch, createSignal } from "solid-js";
+import { batch, createEffect, createSignal } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 
 import { api } from "./api";
@@ -715,12 +715,29 @@ const [pollingActive, setPollingActive] = createSignal(false);
 export { pollingActive, setPollingActive };
 
 // Periodically resync vitals for active drones even when there are no
-// events for them. The per-drone tape file refreshes the tail; this just
-// pulls it server-side.
+// events for them. Two cadences:
+//   - 1500ms when at least one drone is in flight (need fresh per-turn
+//     vitals to power the "now: <tool>" line on the rail).
+//   - 6000ms otherwise (idle / paused / resting) — just enough to catch
+//     a missed SSE drone.spawn event without flooding the access log.
+// SSE drone.spawn / drone.reaped also call refreshActive directly so
+// the operator sees state changes within ~100ms regardless.
 export function startVitalsPolling(): () => void {
-  let timer: number | null = window.setInterval(() => {
-    void refreshActive();
-  }, 1200);
+  let timer: number | null = window.setInterval(
+    () => void refreshActive(),
+    6000,
+  );
+  let busy = false;
+  createEffect(() => {
+    const wantBusy = store.active_drones.length > 0;
+    if (wantBusy === busy) return;
+    busy = wantBusy;
+    if (timer !== null) window.clearInterval(timer);
+    timer = window.setInterval(
+      () => void refreshActive(),
+      busy ? 1500 : 6000,
+    );
+  });
   return () => {
     if (timer !== null) {
       window.clearInterval(timer);

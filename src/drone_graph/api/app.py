@@ -447,7 +447,47 @@ def serve(
         signal_db=signal_db,
     )
     print(f"[mission-control] http://{host}:{port}", file=sys.stderr)
+    # Filter out the high-frequency polling endpoints from uvicorn's
+    # access log. Otherwise the terminal drowns in identical
+    # ``/api/drones/active`` and ``/api/snapshot`` 200s, masking real
+    # signal (errors, drone events emitted by the scheduler tape).
+    _install_uvicorn_access_filter()
     uvicorn.run(app, host=host, port=port, reload=False)
+
+
+_POLL_ENDPOINTS_TO_HIDE = (
+    "/api/drones/active",
+    "/api/snapshot",
+    "/api/status",
+    "/api/inbox",
+    "/api/settings",
+)
+
+
+def _install_uvicorn_access_filter() -> None:
+    """Silence the uvicorn access log for endpoints the frontend polls on
+    a sub-second cadence. Real errors (4xx/5xx) still log because the
+    filter keys on the request line, and 500-class entries include a
+    Traceback above the access line anyway."""
+    import logging
+
+    class _PollFilter(logging.Filter):
+        def filter(self, record: logging.LogRecord) -> bool:
+            try:
+                msg = record.getMessage()
+            except Exception:  # noqa: BLE001
+                return True
+            for ep in _POLL_ENDPOINTS_TO_HIDE:
+                # Only suppress 2xx polling lines. A 500/404 on the same
+                # URL still gets logged because the status code in the
+                # access string would be different.
+                if f'"GET {ep} HTTP/1.1" 200' in msg:
+                    return False
+                if f'"GET {ep} HTTP/1.1" 304' in msg:
+                    return False
+            return True
+
+    logging.getLogger("uvicorn.access").addFilter(_PollFilter())
 
 
 def _reloadable_app() -> FastAPI:
