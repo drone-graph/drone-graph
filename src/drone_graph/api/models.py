@@ -150,7 +150,12 @@ class InstallDTO(BaseModel):
 # ---- Controller / swarm status --------------------------------------------
 
 
-SwarmState = Literal["idle", "active", "paused", "cost_locked", "resting"]
+SwarmState = Literal[
+    "idle", "active", "paused", "cost_locked", "resting",
+    # ``stopped`` = scheduler thread died unexpectedly (uncaught
+    # exception or repeated tick errors). UI prompts a restart.
+    "stopped",
+]
 
 
 class SwarmStatusDTO(BaseModel):
