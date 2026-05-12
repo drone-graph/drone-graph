@@ -99,6 +99,11 @@ class _Process:
     tape_path: Path
     proc: subprocess.Popen[bytes]
     spawned_at: float
+    # UUID minted by the scheduler at spawn (also passed to the runner
+    # via --tape-path and used as the persona/claim drone id). Stored
+    # here so the orphan-browser-slot reaper can check whether a given
+    # ``browser_slot`` claim's owning drone is still in flight.
+    drone_id: str = ""
     cancel_signaled_at: float | None = None
     findings_before: int = 0    # snapshot of total findings count at spawn
     # Per-drone routing — what the scheduler actually invoked, not the
@@ -214,6 +219,12 @@ class Scheduler:
         # dispatching. Catch the exception, log it as a tape event, and
         # keep going. Only bail if we've had ``_MAX_CONSECUTIVE_TICK_ERRORS``
         # bad ticks in a row (suggests a deterministic poison-pill).
+        # Mirror every tick_error + final stop_reason to stderr too, so
+        # the operator watching ``./start`` in their terminal sees the
+        # real cause — not just the tape file (which they have to know
+        # to read).
+        import traceback as _tb
+
         consecutive_tick_errors = 0
         try:
             while True:
@@ -222,15 +233,26 @@ class Scheduler:
                     consecutive_tick_errors = 0
                 except Exception as e:  # noqa: BLE001
                     consecutive_tick_errors += 1
+                    err_repr = f"{type(e).__name__}: {e}"
                     self._emit(
                         "scheduler.tick_error",
-                        error=f"{type(e).__name__}: {e}",
+                        error=err_repr,
                         consecutive=consecutive_tick_errors,
                     )
+                    # Stderr — so the user watching ./start sees it.
+                    # Full traceback only on the first hit so we don't
+                    # spam 5 identical tracebacks before the bail.
+                    sys.stderr.write(
+                        f"[scheduler] tick error #{consecutive_tick_errors}: "
+                        f"{err_repr}\n"
+                    )
+                    if consecutive_tick_errors == 1:
+                        _tb.print_exc(file=sys.stderr)
+                    sys.stderr.flush()
                     if consecutive_tick_errors >= _MAX_CONSECUTIVE_TICK_ERRORS:
                         self.stop_reason = (
                             f"{consecutive_tick_errors} consecutive tick errors; "
-                            f"last: {type(e).__name__}: {e}"
+                            f"last: {err_repr}"
                         )
                         break
                 if self._should_stop():
@@ -238,14 +260,19 @@ class Scheduler:
                 self._sleep_until_next_tick(self._effective_tick_s())
         finally:
             self._drain_inflight()
+            stop_reason = self.stop_reason or "natural exit"
             self._emit(
                 "scheduler.stop",
                 run_id=self.run_id,
-                stop_reason=self.stop_reason or "natural exit",
+                stop_reason=stop_reason,
                 gf=self.counters.gf_count,
                 align=self.counters.align_count,
                 workers=self.counters.worker_count,
             )
+            sys.stderr.write(
+                f"[scheduler] stopped — run={self.run_id} reason={stop_reason}\n"
+            )
+            sys.stderr.flush()
 
     # ---- Single tick ------------------------------------------------------
 
@@ -756,6 +783,7 @@ class Scheduler:
             tape_path=tape_path,
             proc=proc,
             spawned_at=spawned_at,
+            drone_id=drone_id,
             findings_before=len(self.store.all_findings()),
             provider=worker_provider.value,
             model=worker_model,
