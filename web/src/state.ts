@@ -96,7 +96,12 @@ interface SubstrateStore {
   selected_gap_id: string | null;
   selected_finding_id: string | null;
   focused_drone_gap_id: string | null;
-  view: "console" | "findings" | "marketplace" | "internals" | "settings";
+  view: "console" | "tools" | "settings";
+  /** Console-canvas overlay: when true, finding satellites + filters +
+   *  detail panel are rendered atop the gap graph. Off by default — the
+   *  clean canvas is the resting view; operators toggle the overlay on
+   *  when investigating findings. */
+  show_findings_overlay: boolean;
   flash_gap_id: string | null;
   alignment_pulse_gap_id: string | null;
   settings: SettingsView | null;
@@ -128,6 +133,7 @@ const initial: SubstrateStore = {
   selected_finding_id: null,
   focused_drone_gap_id: null,
   view: "console",
+  show_findings_overlay: false,
   flash_gap_id: null,
   alignment_pulse_gap_id: null,
   settings: null,
@@ -727,6 +733,11 @@ export function selectGap(id: string | null): void {
 
 export function selectFinding(id: string | null): void {
   setStore("selected_finding_id", id);
+}
+
+export function setFindingsOverlay(on: boolean): void {
+  setStore("show_findings_overlay", on);
+  if (!on) setStore("selected_finding_id", null);
 }
 
 export function focusDrone(gap_id: string | null): void {

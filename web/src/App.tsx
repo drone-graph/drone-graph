@@ -11,9 +11,7 @@ import { ActionBanner } from "./components/ActionBanner";
 import { ActiveDronesRail } from "./components/ActiveDronesRail";
 import { ChatRail } from "./components/ChatRail";
 import { EventDrawer } from "./components/EventDrawer";
-import { FindingsGraph } from "./components/FindingsGraph";
 import { GapDetailOverlay } from "./components/GapDetail";
-import { Internals } from "./components/Internals";
 import { Marketplace } from "./components/Marketplace";
 import { OnboardingBudget } from "./components/OnboardingBudget";
 import { OnboardingKey } from "./components/OnboardingKey";
@@ -205,9 +203,7 @@ export function App() {
             <Show
               when={store.view === "console"}
               fallback={
-                store.view === "findings" ? <FindingsGraph />
-                : store.view === "marketplace" ? <Marketplace />
-                : store.view === "internals" ? <Internals />
+                store.view === "tools" ? <Marketplace />
                 : <Settings />
               }
             >

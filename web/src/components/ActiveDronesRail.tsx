@@ -42,14 +42,14 @@ export function ActiveDronesRail() {
         <span class="dim" style={{ "font-size": "var(--fs-xs)", "letter-spacing": "0.08em" }}>
           RECENT TOOLS
         </span>
-        <a class="faint link" onClick={() => setView("marketplace")}>
+        <a class="faint link" onClick={() => setView("tools")}>
           marketplace →
         </a>
       </div>
       <div class="tools">
         <For each={recentTools()}>
           {(t) => (
-            <div class="tool" onClick={() => setView("marketplace")}>
+            <div class="tool" onClick={() => setView("tools")}>
               <div class="row" style={{ "justify-content": "space-between" }}>
                 <span style={{ "font-size": "var(--fs-sm)" }}>{t.name}</span>
                 <span class={`tag ${tierTag(t.trust_tier)}`}>{t.trust_tier}</span>

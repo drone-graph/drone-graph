@@ -1,5 +1,8 @@
 import {
+  For,
+  Show,
   createEffect,
+  createMemo,
   createSignal,
   onCleanup,
   onMount,
@@ -14,8 +17,14 @@ import {
 
 import { ContextMenu } from "./ContextMenu";
 import { api } from "../api";
-import { focusDrone, selectGap, store } from "../state";
-import type { ActiveDrone, Finding, Gap } from "../types";
+import {
+  focusDrone,
+  selectFinding,
+  selectGap,
+  setFindingsOverlay,
+  store,
+} from "../state";
+import type { ActiveDrone, Finding, FindingAuthor, Gap } from "../types";
 
 // ---- Node / edge types -----------------------------------------------------
 
@@ -35,9 +44,19 @@ interface SimEdge {
   target: SimNode | string;
 }
 
+interface SatellitePos {
+  finding: Finding;
+  x: number;
+  y: number;
+  r: number;
+}
+
 // ---- Component -------------------------------------------------------------
 
 const HEARTBEAT_MS = 800;
+const MAX_SATELLITES_PER_GAP = 24;
+const SATELLITE_RING_PADDING = 22;
+const SATELLITE_RING_STRIDE = 16;
 
 export function SubstrateCanvas() {
   let canvasRef: HTMLCanvasElement | undefined;
@@ -56,10 +75,39 @@ export function SubstrateCanvas() {
   } | null>(null);
   const [recentFinding, setRecentFinding] = createSignal<Finding | null>(null);
 
+  // ---- Findings overlay state -------------------------------------------
+  const [hoverFindingId, setHoverFindingId] = createSignal<string | null>(null);
+  const [authorFilter, setAuthorFilter] = createSignal<FindingAuthor | "all">(
+    "all",
+  );
+  const [kindFilter, setKindFilter] = createSignal<string>("");
+  const overlayOn = createMemo(() => store.show_findings_overlay);
+  const filteredFindings = createMemo<Finding[]>(() => {
+    if (!overlayOn()) return [];
+    const a = authorFilter();
+    const k = kindFilter().trim().toLowerCase();
+    return store.recent_findings.filter((f) => {
+      if (a !== "all" && f.author !== a) return false;
+      if (k && !f.kind.toLowerCase().includes(k)) return false;
+      return true;
+    });
+  });
+  const allKinds = createMemo<string[]>(() => {
+    const set = new Set<string>();
+    for (const f of store.recent_findings) set.add(f.kind);
+    return [...set].sort();
+  });
+  const selectedFinding = createMemo<Finding | null>(() => {
+    const id = store.selected_finding_id;
+    if (!id) return null;
+    return store.recent_findings.find((f) => f.id === id) ?? null;
+  });
+
   // ---- Layout state held outside Solid reactivity ------------------------
 
   let nodes: SimNode[] = [];
   let edges: SimEdge[] = [];
+  let satellites: SatellitePos[] = [];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let sim: any = null;
 
@@ -186,6 +234,12 @@ export function SubstrateCanvas() {
 
     drawEdges(ctx);
     drawNodes(ctx, t);
+    if (overlayOn()) {
+      computeSatellites();
+      drawSatellites(ctx);
+    } else {
+      satellites = [];
+    }
     drawSediment(ctx, w, h);
     drawDrones(ctx, t);
 
@@ -470,6 +524,90 @@ export function SubstrateCanvas() {
     }
   }
 
+  // ---- Findings overlay (satellites) -----------------------------------
+
+  function computeSatellites(): void {
+    const byGap = new Map<string, Finding[]>();
+    for (const f of filteredFindings()) {
+      const gid = f.affected_gap_ids[0];
+      if (!gid) continue;
+      const arr = byGap.get(gid) ?? [];
+      arr.push(f);
+      byGap.set(gid, arr);
+    }
+    const out: SatellitePos[] = [];
+    for (const n of nodes) {
+      const list = byGap.get(n.gap.id);
+      if (!list || list.length === 0) continue;
+      const recent = list.slice(-MAX_SATELLITES_PER_GAP);
+      const total = recent.length;
+      const perRing = 12;
+      const numRings = Math.ceil(total / perRing);
+      const baseR = n.gap.preset_kind ? 18 : 14;
+      let idx = 0;
+      for (let ringI = 0; ringI < numRings; ringI++) {
+        const inRing = Math.min(perRing, total - ringI * perRing);
+        const ringR = baseR + SATELLITE_RING_PADDING + ringI * SATELLITE_RING_STRIDE;
+        for (let i = 0; i < inRing; i++) {
+          const angle = (i / inRing) * Math.PI * 2 - Math.PI / 2;
+          out.push({
+            finding: recent[idx],
+            x: n.x + Math.cos(angle) * ringR,
+            y: n.y + Math.sin(angle) * ringR,
+            r: 5,
+          });
+          idx++;
+        }
+      }
+    }
+    satellites = out;
+  }
+
+  function drawSatellites(ctx: CanvasRenderingContext2D): void {
+    const selected = store.selected_finding_id;
+    const hovered = hoverFindingId();
+    for (const s of satellites) {
+      const color = authorColor(s.finding.author);
+      const isFocused = selected === s.finding.id || hovered === s.finding.id;
+      const r = s.r * (isFocused ? 1.7 : 1);
+      if (isFocused) {
+        ctx.fillStyle = color + "55";
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, r * 2.4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = color;
+      ctx.shadowColor = color;
+      ctx.shadowBlur = isFocused ? 12 : 6;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      const ring = kindRingColor(s.finding.kind);
+      if (ring) {
+        ctx.strokeStyle = ring;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, r + 1.6, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+  }
+
+  function findSatelliteAt(cx: number, cy: number): SatellitePos | null {
+    const [x, y] = clientToWorld(cx, cy);
+    let best: SatellitePos | null = null;
+    let bestD = 14;
+    for (const s of satellites) {
+      const d = Math.hypot(s.x - x, s.y - y);
+      if (d < bestD) {
+        bestD = d;
+        best = s;
+      }
+    }
+    return best;
+  }
+
   // ---- Mouse / input ----------------------------------------------------
 
   function clientToWorld(cx: number, cy: number): [number, number] {
@@ -497,9 +635,14 @@ export function SubstrateCanvas() {
   }
 
   function onMouseMove(e: MouseEvent): void {
-    const n = findNodeAt(e.clientX, e.clientY);
+    // When the findings overlay is on, satellite hits beat gap hits — they
+    // sit closer to the cursor than the underlying gap node.
+    const sat = overlayOn() ? findSatelliteAt(e.clientX, e.clientY) : null;
+    setHoverFindingId(sat?.finding.id ?? null);
+    const n = sat ? null : findNodeAt(e.clientX, e.clientY);
     setHoverGapId(n?.id ?? null);
-    canvasRef!.style.cursor = n ? "pointer" : panState.dragging ? "grabbing" : "grab";
+    canvasRef!.style.cursor =
+      sat || n ? "pointer" : panState.dragging ? "grabbing" : "grab";
     if (panState.dragging) {
       const tr = transform();
       setTransform({
@@ -523,6 +666,7 @@ export function SubstrateCanvas() {
     panState.startY = e.clientY;
     panState.lastX = e.clientX;
     panState.lastY = e.clientY;
+    if (overlayOn() && findSatelliteAt(e.clientX, e.clientY)) return;
     const n = findNodeAt(e.clientX, e.clientY);
     if (n) return; // node click handled in onMouseUp
     panState.dragging = true;
@@ -549,9 +693,17 @@ export function SubstrateCanvas() {
       e.clientY >= rect.top &&
       e.clientY <= rect.bottom;
     if (!overCanvas) return;
+    if (overlayOn()) {
+      const sat = findSatelliteAt(e.clientX, e.clientY);
+      if (sat) {
+        selectFinding(sat.finding.id);
+        return;
+      }
+    }
     const n = findNodeAt(e.clientX, e.clientY);
     if (n) {
       selectGap(n.id);
+      if (overlayOn()) selectFinding(null);
     } else {
       const yIn = e.clientY - rect.top;
       if (yIn > rect.height - 28 && sedimentCount > 0) {
@@ -598,6 +750,7 @@ export function SubstrateCanvas() {
       void w; void h;
     } else if (e.key === "Escape") {
       selectGap(null);
+      selectFinding(null);
       setMenu(null);
     }
   }
@@ -667,13 +820,54 @@ export function SubstrateCanvas() {
           <span class="tag graphite">
             {store.active_drones.length} drones live
           </span>
+          <button
+            class="ghost overlay-toggle"
+            classList={{ active: overlayOn() }}
+            onClick={() => setFindingsOverlay(!overlayOn())}
+            title="overlay findings as satellites around each gap"
+          >
+            {overlayOn() ? "● findings" : "○ findings"}
+          </button>
         </div>
+        <Show when={overlayOn()}>
+          <div class="hud-row filters">
+            <select
+              value={authorFilter()}
+              onChange={(e) =>
+                setAuthorFilter(e.currentTarget.value as FindingAuthor | "all")
+              }
+            >
+              <option value="all">all authors</option>
+              <option value="gap_finding">gap_finding</option>
+              <option value="alignment">alignment</option>
+              <option value="worker">worker</option>
+              <option value="user">user</option>
+              <option value="system">system</option>
+            </select>
+            <select
+              value={kindFilter()}
+              onChange={(e) => setKindFilter(e.currentTarget.value)}
+            >
+              <option value="">all kinds</option>
+              <For each={allKinds()}>
+                {(k) => <option value={k}>{k}</option>}
+              </For>
+            </select>
+            <span class="faint count">
+              {filteredFindings().length} / {store.recent_findings.length}
+            </span>
+            <Legend />
+          </div>
+        </Show>
         {recentFinding() && (
           <div class="finding-ticker">
             <FindingTicker f={recentFinding()!} />
           </div>
         )}
       </div>
+      <Show when={overlayOn() && selectedFinding()}>
+        <FindingDetail finding={selectedFinding()!} />
+      </Show>
       {menu() && (
         <ContextMenu
           x={menu()!.x}
@@ -702,7 +896,124 @@ function FindingTicker(props: { f: Finding }) {
   );
 }
 
+function Legend() {
+  const items: { color: string; label: string }[] = [
+    { color: "#3c6ef5", label: "user" },
+    { color: "#b48cff", label: "GF" },
+    { color: "#f5b53c", label: "alignment" },
+    { color: "#7fe5d0", label: "worker" },
+    { color: "#687589", label: "system" },
+  ];
+  return (
+    <div class="legend">
+      <For each={items}>
+        {(i) => (
+          <span class="legend-item">
+            <span class="legend-dot" style={{ background: i.color }} />
+            <span class="faint">{i.label}</span>
+          </span>
+        )}
+      </For>
+    </div>
+  );
+}
+
+function FindingDetail(props: { finding: Finding }) {
+  return (
+    <div class="finding-detail">
+      <div class="fd-head">
+        <span class={`tag ${authorTag(props.finding.author)}`}>
+          {props.finding.author}
+        </span>
+        <span class="tag graphite">{props.finding.kind}</span>
+        <span class="dim mono" style={{ "font-size": "var(--fs-xs)" }}>
+          tick {props.finding.tick}
+        </span>
+        <span style={{ flex: "1" }} />
+        <button class="ghost" onClick={() => selectFinding(null)}>
+          close
+        </button>
+      </div>
+      <div class="fd-body">
+        <pre class="fd-summary">{props.finding.summary}</pre>
+        <Show when={props.finding.affected_gap_ids.length > 0}>
+          <div class="fd-section">
+            <div class="fd-label">AFFECTED GAPS</div>
+            <div class="row" style={{ "flex-wrap": "wrap", gap: "4px" }}>
+              <For each={props.finding.affected_gap_ids}>
+                {(gid) => (
+                  <a
+                    class="tag cobalt clickable"
+                    onClick={() => selectGap(gid)}
+                  >
+                    {gid.slice(0, 8)}
+                  </a>
+                )}
+              </For>
+            </div>
+          </div>
+        </Show>
+        <Show when={props.finding.artefact_paths.length > 0}>
+          <div class="fd-section">
+            <div class="fd-label">ARTEFACTS</div>
+            <For each={props.finding.artefact_paths}>
+              {(p) => (
+                <div class="fd-artefact mono" style={{ "font-size": "var(--fs-xs)" }}>
+                  {p}
+                </div>
+              )}
+            </For>
+          </div>
+        </Show>
+        <Show when={props.finding.invocation_tool_name}>
+          <div class="fd-section">
+            <div class="fd-label">INVOCATION</div>
+            <div style={{ "font-size": "var(--fs-xs)" }}>
+              tool <span class="mono">{props.finding.invocation_tool_name}</span>
+              {" · outcome "}
+              {props.finding.invocation_outcome ?? "—"}
+              <Show when={props.finding.invocation_cost_usd}>
+                {" · $"}
+                {props.finding.invocation_cost_usd!.toFixed(4)}
+              </Show>
+            </div>
+          </div>
+        </Show>
+      </div>
+    </div>
+  );
+}
+
 // ---- Helpers ---------------------------------------------------------------
+
+function authorColor(a: FindingAuthor): string {
+  return {
+    user: "#3c6ef5",
+    gap_finding: "#b48cff",
+    alignment: "#f5b53c",
+    worker: "#7fe5d0",
+    system: "#687589",
+  }[a];
+}
+
+function kindRingColor(kind: string): string | null {
+  if (
+    kind === "decompose" ||
+    kind === "create" ||
+    kind === "retire" ||
+    kind === "reopen" ||
+    kind === "rewrite_intent"
+  ) {
+    return "rgba(60, 110, 245, 0.45)";
+  }
+  if (kind === "fail" || kind === "requires_user_action") {
+    return "rgba(226, 107, 67, 0.55)";
+  }
+  if (kind === "fill") {
+    return "rgba(127, 229, 208, 0.55)";
+  }
+  return null;
+}
 
 function authorTag(a: Finding["author"]): string {
   return {
@@ -826,4 +1137,105 @@ const CSS = `
   text-overflow: ellipsis;
   pointer-events: auto;
 }
+
+/* Findings overlay HUD bits — toggle button and filter row. The HUD root
+ * is pointer-events: none for click-through; these chunks opt back in. */
+.overlay-toggle {
+  pointer-events: auto;
+  padding: 2px 8px;
+  font-size: var(--fs-xs);
+  letter-spacing: 0.04em;
+  border-color: var(--border-strong);
+  background: rgba(11, 15, 23, 0.7);
+}
+.overlay-toggle.active {
+  color: var(--cobalt-soft);
+  border-color: var(--cobalt);
+}
+.hud-row.filters {
+  pointer-events: auto;
+  align-items: center;
+  gap: 8px;
+  background: rgba(11, 15, 23, 0.7);
+  border: 1px solid var(--border);
+  padding: 4px 8px;
+  border-radius: 3px;
+  font-size: var(--fs-xs);
+  width: fit-content;
+}
+.hud-row.filters select {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  padding: 2px 4px;
+}
+.hud-row.filters .count { margin-left: 4px; }
+.legend {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-left: 4px;
+}
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.legend-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.finding-detail {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: min(420px, 40%);
+  background: var(--bg-1);
+  border-left: 1px solid var(--border-strong);
+  display: flex;
+  flex-direction: column;
+  z-index: 5;
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.5);
+}
+.fd-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-2);
+}
+.fd-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.fd-summary {
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  line-height: 1.55;
+  color: var(--fg-0);
+}
+.fd-section { display: flex; flex-direction: column; gap: 5px; }
+.fd-label {
+  font-size: var(--fs-xs);
+  letter-spacing: 0.08em;
+  color: var(--fg-2);
+}
+.fd-artefact {
+  word-break: break-all;
+  color: var(--fg-1);
+}
+.tag.clickable { cursor: pointer; }
+.tag.clickable:hover { background: var(--bg-3); }
 `;
