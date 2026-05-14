@@ -17,13 +17,7 @@ import {
 
 import { ContextMenu } from "./ContextMenu";
 import { api } from "../api";
-import {
-  focusDrone,
-  selectFinding,
-  selectGap,
-  setFindingsOverlay,
-  store,
-} from "../state";
+import { focusDrone, selectFinding, selectGap, store } from "../state";
 import type { ActiveDrone, Finding, FindingAuthor, Gap } from "../types";
 
 // ---- Node / edge types -----------------------------------------------------
@@ -81,9 +75,7 @@ export function SubstrateCanvas() {
     "all",
   );
   const [kindFilter, setKindFilter] = createSignal<string>("");
-  const overlayOn = createMemo(() => store.show_findings_overlay);
   const filteredFindings = createMemo<Finding[]>(() => {
-    if (!overlayOn()) return [];
     const a = authorFilter();
     const k = kindFilter().trim().toLowerCase();
     return store.recent_findings.filter((f) => {
@@ -234,12 +226,8 @@ export function SubstrateCanvas() {
 
     drawEdges(ctx);
     drawNodes(ctx, t);
-    if (overlayOn()) {
-      computeSatellites();
-      drawSatellites(ctx);
-    } else {
-      satellites = [];
-    }
+    computeSatellites();
+    drawSatellites(ctx);
     drawSediment(ctx, w, h);
     drawDrones(ctx, t);
 
@@ -635,9 +623,9 @@ export function SubstrateCanvas() {
   }
 
   function onMouseMove(e: MouseEvent): void {
-    // When the findings overlay is on, satellite hits beat gap hits — they
-    // sit closer to the cursor than the underlying gap node.
-    const sat = overlayOn() ? findSatelliteAt(e.clientX, e.clientY) : null;
+    // Satellite hits beat gap hits — they sit closer to the cursor than
+    // the underlying gap node.
+    const sat = findSatelliteAt(e.clientX, e.clientY);
     setHoverFindingId(sat?.finding.id ?? null);
     const n = sat ? null : findNodeAt(e.clientX, e.clientY);
     setHoverGapId(n?.id ?? null);
@@ -666,7 +654,7 @@ export function SubstrateCanvas() {
     panState.startY = e.clientY;
     panState.lastX = e.clientX;
     panState.lastY = e.clientY;
-    if (overlayOn() && findSatelliteAt(e.clientX, e.clientY)) return;
+    if (findSatelliteAt(e.clientX, e.clientY)) return;
     const n = findNodeAt(e.clientX, e.clientY);
     if (n) return; // node click handled in onMouseUp
     panState.dragging = true;
@@ -693,17 +681,15 @@ export function SubstrateCanvas() {
       e.clientY >= rect.top &&
       e.clientY <= rect.bottom;
     if (!overCanvas) return;
-    if (overlayOn()) {
-      const sat = findSatelliteAt(e.clientX, e.clientY);
-      if (sat) {
-        selectFinding(sat.finding.id);
-        return;
-      }
+    const sat = findSatelliteAt(e.clientX, e.clientY);
+    if (sat) {
+      selectFinding(sat.finding.id);
+      return;
     }
     const n = findNodeAt(e.clientX, e.clientY);
     if (n) {
       selectGap(n.id);
-      if (overlayOn()) selectFinding(null);
+      selectFinding(null);
     } else {
       const yIn = e.clientY - rect.top;
       if (yIn > rect.height - 28 && sedimentCount > 0) {
@@ -820,52 +806,42 @@ export function SubstrateCanvas() {
           <span class="tag graphite">
             {store.active_drones.length} drones live
           </span>
-          <button
-            class="ghost overlay-toggle"
-            classList={{ active: overlayOn() }}
-            onClick={() => setFindingsOverlay(!overlayOn())}
-            title="overlay findings as satellites around each gap"
-          >
-            {overlayOn() ? "● findings" : "○ findings"}
-          </button>
         </div>
-        <Show when={overlayOn()}>
-          <div class="hud-row filters">
-            <select
-              value={authorFilter()}
-              onChange={(e) =>
-                setAuthorFilter(e.currentTarget.value as FindingAuthor | "all")
-              }
-            >
-              <option value="all">all authors</option>
-              <option value="gap_finding">gap_finding</option>
-              <option value="alignment">alignment</option>
-              <option value="worker">worker</option>
-              <option value="user">user</option>
-              <option value="system">system</option>
-            </select>
-            <select
-              value={kindFilter()}
-              onChange={(e) => setKindFilter(e.currentTarget.value)}
-            >
-              <option value="">all kinds</option>
-              <For each={allKinds()}>
-                {(k) => <option value={k}>{k}</option>}
-              </For>
-            </select>
-            <span class="faint count">
-              {filteredFindings().length} / {store.recent_findings.length}
-            </span>
-            <Legend />
-          </div>
-        </Show>
+        <div class="hud-row filters">
+          <select
+            value={authorFilter()}
+            onChange={(e) =>
+              setAuthorFilter(e.currentTarget.value as FindingAuthor | "all")
+            }
+          >
+            <option value="all">all authors</option>
+            <option value="gap_finding">gap_finding</option>
+            <option value="alignment">alignment</option>
+            <option value="worker">worker</option>
+            <option value="user">user</option>
+            <option value="system">system</option>
+          </select>
+          <select
+            value={kindFilter()}
+            onChange={(e) => setKindFilter(e.currentTarget.value)}
+          >
+            <option value="">all kinds</option>
+            <For each={allKinds()}>
+              {(k) => <option value={k}>{k}</option>}
+            </For>
+          </select>
+          <span class="faint count">
+            {filteredFindings().length} / {store.recent_findings.length}
+          </span>
+          <Legend />
+        </div>
         {recentFinding() && (
           <div class="finding-ticker">
             <FindingTicker f={recentFinding()!} />
           </div>
         )}
       </div>
-      <Show when={overlayOn() && selectedFinding()}>
+      <Show when={selectedFinding()}>
         <FindingDetail finding={selectedFinding()!} />
       </Show>
       {menu() && (
@@ -1138,20 +1114,8 @@ const CSS = `
   pointer-events: auto;
 }
 
-/* Findings overlay HUD bits — toggle button and filter row. The HUD root
- * is pointer-events: none for click-through; these chunks opt back in. */
-.overlay-toggle {
-  pointer-events: auto;
-  padding: 2px 8px;
-  font-size: var(--fs-xs);
-  letter-spacing: 0.04em;
-  border-color: var(--border-strong);
-  background: rgba(11, 15, 23, 0.7);
-}
-.overlay-toggle.active {
-  color: var(--cobalt-soft);
-  border-color: var(--cobalt);
-}
+/* Findings filter row. The HUD root is pointer-events: none for
+ * click-through; this row opts back in so the selects are usable. */
 .hud-row.filters {
   pointer-events: auto;
   align-items: center;
