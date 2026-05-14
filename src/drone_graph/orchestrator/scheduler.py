@@ -52,7 +52,6 @@ from drone_graph.orchestrator.scenarios import (
     load_root_seed,
     load_scenario,
 )
-from drone_graph.orchestrator.isolation import plan_drone_environment
 from drone_graph.orchestrator.tape import EventTape
 from drone_graph.signals import SQLiteSignalStore, default_db_path
 from drone_graph.substrate import Substrate
@@ -100,8 +99,8 @@ class _Process:
     proc: subprocess.Popen[bytes]
     spawned_at: float
     # UUID minted by the scheduler at spawn (also passed to the runner
-    # via --tape-path and used as the persona/claim drone id). Stored
-    # here so the orphan-browser-slot reaper can check whether a given
+    # via --tape-path and used as the claim drone id). Stored here so
+    # the orphan-browser-slot reaper can check whether a given
     # ``browser_slot`` claim's owning drone is still in flight.
     drone_id: str = ""
     cancel_signaled_at: float | None = None
@@ -198,16 +197,6 @@ class Scheduler:
         except Exception:
             self._registry = None
         self._tier_overrides = dict(tier_overrides or {})
-        # Per-gap dedupe for the "operator identity requested — approve?"
-        # inbox finding. The substrate already carries the truth (a gap's
-        # ``identity_approved`` flag plus the requires_user_action finding
-        # we appended); this set just prevents the scheduler from spamming
-        # one new finding on every tick while the gap waits for approval.
-        self._identity_asked: set[str] = set()
-        # Operator's cwd at server boot — used as the working dir for
-        # drones granted operator identity. Captured here so a drone
-        # later changing the process cwd doesn't shift the meaning.
-        self._operator_cwd = Path.cwd().resolve()
 
     # ---- Top-level run ----------------------------------------------------
 
@@ -601,88 +590,12 @@ class Scheduler:
             g for g in candidates
             if self.signals.get_claim("gap", g.id) is None
         ]
-        # Identity policy gate: any gap requesting operator identity must
-        # be either approved (proceeds) or globally disallowed (proceeds
-        # in clean mode after one-time policy denial). A pending-approval
-        # gap is filtered out here and surfaces in the inbox.
-        ready: list[Gap] = []
         for g in unclaimed:
-            if self._identity_blocks_dispatch(g):
-                continue
-            ready.append(g)
-        for g in ready:
             if g.id not in self.attempted_gap_ids:
                 return g
-        for g in ready:
+        for g in unclaimed:
             return g
         return None
-
-    def _identity_blocks_dispatch(self, gap: Gap) -> bool:
-        """Return True if a worker gap should be deferred because it's
-        waiting on operator approval for personal-identity use. As a side
-        effect, emits a one-time requires_user_action finding to surface
-        it in the inbox (when master is ON) or a policy.identity_denied
-        event + flips the deny reason (when master is OFF).
-        """
-        if not getattr(gap, "uses_operator_identity", False):
-            return False
-        if getattr(gap, "identity_approved", False):
-            return False
-        if getattr(gap, "identity_denied_reason", None):
-            # Already denied at the policy level — dispatch in clean mode.
-            return False
-        allow = self._operator_identity_allowed()
-        if not allow:
-            # Global master is OFF: record a policy denial finding once
-            # so future GF passes see it and decompose differently.
-            try:
-                self.store.apply_deny_identity(
-                    gap_id=gap.id,
-                    reason=(
-                        "global setting allow_operator_identity is OFF; "
-                        "drone will run with isolated identity"
-                    ),
-                    tick=self.tick,
-                    author=FindingAuthor.system,
-                )
-            except Exception:  # noqa: BLE001
-                pass
-            self._emit(
-                "policy.identity_denied",
-                gap_id=gap.id,
-                reason="master_off",
-            )
-            return False
-        # Master ON, gap not approved yet — surface in inbox once.
-        if gap.id in self._identity_asked:
-            return True
-        try:
-            self.store.append_finding(
-                tick=self.tick,
-                author=FindingAuthor.system,
-                kind=FindingKind.requires_user_action,
-                summary=(
-                    f"Gap {gap.id[:8]} needs to use your personal identity "
-                    f"to make progress: {gap.intent.splitlines()[0][:140]}. "
-                    "Approve to let the drone run with your real $HOME, "
-                    "$PWD and env; deny to keep it isolated."
-                ),
-                affected_gap_ids=[gap.id],
-                artefact_paths=[f"identity-request:{gap.id}"],
-            )
-            self._identity_asked.add(gap.id)
-            self._emit(
-                "policy.identity_requested",
-                gap_id=gap.id,
-            )
-        except Exception:  # noqa: BLE001
-            pass
-        return True
-
-    def _operator_identity_allowed(self) -> bool:
-        """Read the master toggle from env (mirrored by Settings)."""
-        v = os.environ.get("DRONE_GRAPH_ALLOW_OPERATOR_IDENTITY", "")
-        return v.strip().lower() in ("1", "true", "yes", "on")
 
     # ---- Subprocess plumbing ----------------------------------------------
 
@@ -742,24 +655,14 @@ class Scheduler:
             "--signal-db", str(Path(self.signal_db).resolve()),
             "--run-id", self.run_id,
         ]
-        # Identity firewall: by default every drone gets an isolated
-        # $HOME + scrubbed env. Operator-identity-approved gaps get full
-        # passthrough; preset drones get full env but a scratch cwd.
-        plan = plan_drone_environment(
-            drone_id=drone_id,
-            role=role,
-            gap=gap,
-            operator_identity_approved=getattr(gap, "identity_approved", False),
-            allow_operator_identity=self._operator_identity_allowed(),
-            base_env=os.environ.copy(),
-            run_dir=Path("var") / "runs" / self.run_id,
-            operator_cwd=self._operator_cwd,
-        )
-        plan.env.setdefault("PYTHONUNBUFFERED", "1")
+        # Drones run as the operator — full env, real cwd. Permission
+        # tier governs which tool calls block for approval at the
+        # dispatcher level; the scheduler doesn't gate anything here.
+        env = os.environ.copy()
+        env.setdefault("PYTHONUNBUFFERED", "1")
         proc = subprocess.Popen(
             cmd,
-            env=plan.env,
-            cwd=str(plan.cwd),
+            env=env,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
         )
@@ -774,7 +677,6 @@ class Scheduler:
             provider=worker_provider.value,
             model=worker_model,
             model_tier=gap.model_tier.value,
-            identity_mode=plan.identity_mode,
         )
         return _Process(
             role=role,

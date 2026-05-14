@@ -90,14 +90,6 @@ class FindingKind(StrEnum):
     # ``note`` finding referencing the block; Gap Finding picks it up next
     # tick and re-dispatches.
     requires_user_action = "requires_user_action"
-    # Evidence that a drone tried (or considered + ruled out) alternative
-    # routes before escalating a ``requires_user_action`` block. The
-    # ``cm_attempted_routes`` builtin writes this; the gate on
-    # ``cm_write_finding(kind=requires_user_action)`` requires at least
-    # one of these on the current gap from this drone. The point is to
-    # force the swarm's comparative advantage — enumeration of cheap
-    # workarounds — before asking the human.
-    attempted_routes = "attempted_routes"
     # Direct chat message between the operator and a specific live drone.
     # author=user: the operator typed this into the drone's chat panel; the
     # drone reads it via cm_browser.await_operator or sees it injected at
@@ -164,20 +156,6 @@ class Gap(BaseModel):
     # "not right now" button so the swarm doesn't keep retrying a gap
     # the operator wants to revisit later.
     paused: bool = False
-    # Identity policy. When True, Gap Finding has judged this gap genuinely
-    # requires the operator's own identity (their GitHub account, their
-    # shell, their cwd, their saved creds) to complete. The scheduler
-    # blocks dispatch until either:
-    #   * the operator approves via the inbox → ``identity_approved`` flips
-    #     to True and the drone runs with real env + real $HOME + real $PWD,
-    #   * OR Settings.allow_operator_identity is False → the runtime
-    #     silently runs the drone in clean (isolated) mode and emits a
-    #     ``policy.identity_denied`` event; ``identity_denied_reason`` is
-    #     set so future drones don't keep re-asking.
-    # Defaults to False; drones run with throwaway identities.
-    uses_operator_identity: bool = False
-    identity_approved: bool = False
-    identity_denied_reason: str | None = None
 
 
 class Finding(BaseModel):

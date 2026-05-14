@@ -183,7 +183,6 @@ from drone_graph.gaps.records import (
     FindingKind,
 )
 from drone_graph.prompts import load_hivemind
-from drone_graph.orchestrator.redaction import redact
 from drone_graph.signals import SignalStore
 from drone_graph.substrate import Substrate
 from drone_graph.terminal import Terminal, TerminalDead, TerminalTimeout
@@ -214,17 +213,12 @@ DEFAULT_EMERGENT_LOADOUT = [
     "terminal_run",
     "cm_read_gap",
     "cm_write_finding",
-    "cm_attempted_routes",
     "cm_register_tool",
     "cm_request_tool",
     "cm_acquire_file",
     "cm_release_file",
     "cm_install_package",
     "cm_browser",
-    "cm_list_personas",
-    "cm_create_persona",
-    "cm_use_persona",
-    "cm_set_persona_capability",
 ]
 
 # Tools that imply this drone needs a real bash terminal.
@@ -305,7 +299,7 @@ class _TerminalBox:
     """Holds the drone's current terminal, letting tool dispatchers swap it on death."""
 
     def __init__(self) -> None:
-        self._terminal: Terminal = Terminal(env=_scrubbed_shell_env())
+        self._terminal: Terminal = Terminal()
 
     def get(self) -> Terminal:
         return self._terminal
@@ -315,32 +309,13 @@ class _TerminalBox:
             self._terminal.close()
         except Exception:  # noqa: BLE001 - best-effort cleanup of a dead shell
             pass
-        self._terminal = Terminal(env=_scrubbed_shell_env())
+        self._terminal = Terminal()
 
     def close(self) -> None:
         try:
             self._terminal.close()
         except Exception:  # noqa: BLE001
             pass
-
-
-def _scrubbed_shell_env() -> dict[str, str]:
-    """Env for a drone's bash terminal.
-
-    Inherits the drone subprocess's env (already scrubbed for isolated
-    drones by the scheduler), then drops anything that would re-leak the
-    provider API key: the canonical ``ANTHROPIC_API_KEY`` /
-    ``OPENAI_API_KEY`` plus our side-channel ``DRONE_GRAPH_PROVIDER_KEY``.
-
-    Operator-identity drones intentionally inherit the keys — the policy
-    decision is upstream (scheduler chose passthrough mode).
-    """
-    env = dict(os.environ)
-    if env.get("DRONE_GRAPH_IDENTITY_MODE") == "operator":
-        return env
-    for k in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "DRONE_GRAPH_PROVIDER_KEY"):
-        env.pop(k, None)
-    return env
 
 
 def _resolve_loadout(gap: Gap) -> list[str]:
@@ -733,10 +708,6 @@ def run_drone(
             tool_results: list[dict[str, Any]] = []
             for call in resp.tool_calls:
                 content = _dispatch_one(call, state)
-                # Identity firewall: scrub the operator's name / email /
-                # handle from anything the drone is about to read. No-op
-                # when this drone is in operator-identity mode.
-                content = redact(content)
                 tool_results.append(
                     {
                         "type": "tool_result",
@@ -910,6 +881,27 @@ def _dispatch_one(call: ToolCall, state: _RuntimeState) -> str:
     builtin = get_builtin(call.name)
     if builtin is None:
         return f"ERROR: tool {call.name!r} is registered as a name but has no Python dispatcher."
+    # Permission gate. Under ``ask_external`` / ``ask_everything`` this may
+    # block the dispatcher until the operator answers. Under ``open`` (or for
+    # read / substrate-write tools at any tier) it returns immediately.
+    from drone_graph.permissions import check_or_wait
+
+    decision = check_or_wait(
+        signals=ctx.signals,
+        drone_id=ctx.drone_id,
+        gap_id=ctx.gap_id,
+        tool_name=call.name,
+        tool_input=call.input,
+        tape=ctx.tape,
+    )
+    if not decision.granted:
+        reason = decision.note or "denied"
+        prefix = "PERMISSION_TIMEOUT" if decision.timed_out else "PERMISSION_DENIED"
+        return (
+            f"{prefix}: operator did not authorise {call.name!r}. "
+            f"Note: {reason}. Try another approach or write a fail finding "
+            "explaining what you can't do without it."
+        )
     try:
         result = builtin.dispatch(call.input, ctx)
     except Exception as e:  # noqa: BLE001 - tool dispatchers shouldn't crash the drone

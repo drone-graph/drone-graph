@@ -138,44 +138,6 @@ function InboxRow(props: { item: InboxItem; close: () => void }) {
     }
   }
 
-  async function grantIdentity() {
-    const gapId = String(props.item.details?.gap_id ?? props.item.affected_gap_ids[0] ?? "");
-    if (!gapId) return;
-    const note = window.prompt(
-      "Approve operator-identity for this gap? Add an optional note for the audit log:",
-      "",
-    );
-    if (note === null) return;
-    setBusy(true);
-    try {
-      await api.grantIdentity(gapId, note);
-      await refreshInbox();
-    } catch (e) {
-      window.alert(String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function denyIdentity() {
-    const gapId = String(props.item.details?.gap_id ?? props.item.affected_gap_ids[0] ?? "");
-    if (!gapId) return;
-    const reason = window.prompt(
-      "Reason for denying operator identity? The drone will run in clean mode and GF will see this so it doesn't keep re-asking.",
-      "not necessary",
-    );
-    if (reason === null) return;
-    setBusy(true);
-    try {
-      await api.denyIdentity(gapId, reason);
-      await refreshInbox();
-    } catch (e) {
-      window.alert(String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
   function inspect() {
     if (props.item.affected_gap_ids[0]) {
       selectGap(props.item.affected_gap_ids[0]);
@@ -231,67 +193,41 @@ function InboxRow(props: { item: InboxItem; close: () => void }) {
           </button>
         </Show>
         <span style={{ flex: "1" }} />
-        <Show
-          when={props.item.action_type === "identity"}
-          fallback={
-            <>
-              <button
-                class="ghost"
-                disabled={busy()}
-                onClick={() => void resolve("dont_do_this")}
-                style={{ "font-size": "var(--fs-xs)" }}
-                title="reject the goal — gap will be retired"
-              >
-                don't do this
-              </button>
-              <button
-                class="ghost"
-                disabled={busy()}
-                onClick={() => void resolve("not_right_now")}
-                style={{ "font-size": "var(--fs-xs)" }}
-                title="pause the gap — resume later from the gap detail"
-              >
-                not right now
-              </button>
-              <button
-                class="ghost"
-                disabled={busy()}
-                onClick={() => void resolve("try_another_way")}
-                style={{ "font-size": "var(--fs-xs)" }}
-                title="keep the goal, reject this means — GF decomposes around it"
-              >
-                try another way
-              </button>
-              <button
-                class="primary"
-                disabled={busy()}
-                onClick={() => void resolve("resolved")}
-                style={{ "font-size": "var(--fs-xs)", padding: "3px 10px" }}
-              >
-                mark done
-              </button>
-            </>
-          }
+        <button
+          class="ghost"
+          disabled={busy()}
+          onClick={() => void resolve("dont_do_this")}
+          style={{ "font-size": "var(--fs-xs)" }}
+          title="reject the goal — gap will be retired"
         >
-          <button
-            class="ghost"
-            disabled={busy()}
-            onClick={() => void denyIdentity()}
-            style={{ "font-size": "var(--fs-xs)" }}
-            title="run in isolated mode anyway"
-          >
-            keep isolated
-          </button>
-          <button
-            class="primary"
-            disabled={busy()}
-            onClick={() => void grantIdentity()}
-            style={{ "font-size": "var(--fs-xs)", padding: "3px 10px" }}
-            title="let this drone use your real identity"
-          >
-            approve
-          </button>
-        </Show>
+          don't do this
+        </button>
+        <button
+          class="ghost"
+          disabled={busy()}
+          onClick={() => void resolve("not_right_now")}
+          style={{ "font-size": "var(--fs-xs)" }}
+          title="pause the gap — resume later from the gap detail"
+        >
+          not right now
+        </button>
+        <button
+          class="ghost"
+          disabled={busy()}
+          onClick={() => void resolve("try_another_way")}
+          style={{ "font-size": "var(--fs-xs)" }}
+          title="keep the goal, reject this means — GF decomposes around it"
+        >
+          try another way
+        </button>
+        <button
+          class="primary"
+          disabled={busy()}
+          onClick={() => void resolve("resolved")}
+          style={{ "font-size": "var(--fs-xs)", padding: "3px 10px" }}
+        >
+          mark done
+        </button>
       </div>
       <style>{`
         .row-card {
@@ -342,7 +278,6 @@ function typeTag(t: InboxActionType): string {
     purchase: "copper",
     approval: "amber",
     mfa: "amber",
-    identity: "amber",
     other: "graphite",
   }[t];
 }

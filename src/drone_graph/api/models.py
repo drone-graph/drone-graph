@@ -39,9 +39,6 @@ class GapDTO(BaseModel):
     tool_suggestions: list[str] = Field(default_factory=list)
     context_preload: list[str] = Field(default_factory=list)
     preset_kind: str | None = None
-    uses_operator_identity: bool = False
-    identity_approved: bool = False
-    identity_denied_reason: str | None = None
     max_output_tokens: int | None = None
     paused: bool = False
 

@@ -114,35 +114,10 @@ def _build_parser() -> argparse.ArgumentParser:
     return p
 
 
-def _rehydrate_provider_key() -> None:
-    """Isolated-mode drones receive the provider key under a side-channel
-    name so it doesn't leak into ``terminal_run`` children. Promote it
-    back to the canonical SDK env var so ``Anthropic()`` / ``OpenAI()``
-    pick it up; ``_TerminalBox`` in runtime.py drops both copies before
-    spawning bash.
-    """
-    sidekey = os.environ.get("DRONE_GRAPH_PROVIDER_KEY", "").strip()
-    if not sidekey:
-        return
-    if (
-        not os.environ.get("ANTHROPIC_API_KEY")
-        and not os.environ.get("OPENAI_API_KEY")
-    ):
-        if sidekey.startswith("sk-ant"):
-            os.environ["ANTHROPIC_API_KEY"] = sidekey
-        elif sidekey.startswith("sk-"):
-            os.environ["OPENAI_API_KEY"] = sidekey
-        else:
-            # Unknown prefix — set both, the unused one is harmless.
-            os.environ["ANTHROPIC_API_KEY"] = sidekey
-            os.environ["OPENAI_API_KEY"] = sidekey
-
-
 def main(argv: list[str] | None = None) -> int:
     # override=True so an empty ANTHROPIC_API_KEY in the parent shell
     # (common in nested venvs) doesn't shadow a real value in .env.
     load_dotenv(override=True)
-    _rehydrate_provider_key()
     args = _build_parser().parse_args(argv)
 
     substrate = _substrate_from_env()

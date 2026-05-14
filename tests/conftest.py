@@ -16,10 +16,10 @@ def substrate() -> Iterator[Substrate]:
     trashed by an accidental ``pytest`` run from a dev machine:
 
     1. **Live-session detection.** If the DB shows signs of a real
-       session — any ``:Persona`` node (minted by
-       ``init_collective_mind``) — skip the test. Set
-       ``DRONE_GRAPH_TESTS_ALLOW_WIPE=1`` to override (CI / known-empty
-       test DB).
+       session — any preset ``:Gap`` (``preset:gap_finding`` or
+       ``preset:alignment``, minted by ``init_collective_mind``) — skip
+       the test. Set ``DRONE_GRAPH_TESTS_ALLOW_WIPE=1`` to override
+       (CI / known-empty test DB).
     2. **Symmetric wipe.** Even when the gate lets us through, we wipe
        both before AND after the test so we never leave fixture data
        (e.g. a Gap with ``intent="a"``) lying around for the next
@@ -36,14 +36,17 @@ def substrate() -> Iterator[Substrate]:
     try:
         if os.environ.get("DRONE_GRAPH_TESTS_ALLOW_WIPE") != "1":
             try:
-                rows = s.execute_read("MATCH (p:Persona) RETURN count(p) AS c")
-                persona_count = int(rows[0]["c"]) if rows else 0
+                rows = s.execute_read(
+                    "MATCH (g:Gap) WHERE g.preset_kind IS NOT NULL "
+                    "RETURN count(g) AS c"
+                )
+                preset_count = int(rows[0]["c"]) if rows else 0
             except Exception:
-                persona_count = 0
-            if persona_count > 0:
+                preset_count = 0
+            if preset_count > 0:
                 pytest.skip(
                     "live drone-graph substrate detected on this Neo4j "
-                    f"({persona_count} Persona node(s) — likely a real "
+                    f"({preset_count} preset gap(s) — likely a real "
                     "swarm session). Refusing to wipe. Stop the running "
                     "mission-control server, point NEO4J_URI at a separate "
                     "test database, or set "

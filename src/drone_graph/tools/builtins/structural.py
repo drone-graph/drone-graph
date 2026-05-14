@@ -55,19 +55,6 @@ def _err_result(name: str, e: Exception) -> ToolResult:
                                 "with cm_request_tool."
                             ),
                         },
-                        "uses_operator_identity": {
-                            "type": "boolean",
-                            "description": (
-                                "Set true ONLY when this child gap intrinsically "
-                                "requires the operator's personal identity (their "
-                                "real $HOME, $PWD, env, accounts) — e.g. they're "
-                                "deploying their own existing app, the work is "
-                                "on their personal repos. Defaults false: the "
-                                "drone runs isolated under a swarm persona. "
-                                "Flagged gaps don't dispatch until the operator "
-                                "approves via the action inbox."
-                            ),
-                        },
                         "max_output_tokens": {
                             "type": "integer",
                             "description": (
@@ -137,16 +124,6 @@ def decompose(args: dict[str, Any], ctx: DroneContext) -> ToolResult:
             },
             "tool_loadout": {"type": "array", "items": {"type": "string"}},
             "tool_suggestions": {"type": "array", "items": {"type": "string"}},
-            "uses_operator_identity": {
-                "type": "boolean",
-                "description": (
-                    "Set true ONLY when this gap intrinsically requires the "
-                    "operator's personal identity (their real $HOME, $PWD, "
-                    "env, accounts). Defaults false; the drone runs isolated "
-                    "under a swarm persona. Flagged gaps don't dispatch until "
-                    "the operator approves via the action inbox."
-                ),
-            },
             "max_output_tokens": {
                 "type": "integer",
                 "description": (
@@ -182,7 +159,6 @@ def create(args: dict[str, Any], ctx: DroneContext) -> ToolResult:
             tier=tier,
             tool_loadout=list(args.get("tool_loadout") or []) or None,
             tool_suggestions=list(args.get("tool_suggestions") or []) or None,
-            uses_operator_identity=bool(args.get("uses_operator_identity", False)),
             max_output_tokens=(
                 int(args["max_output_tokens"])
                 if args.get("max_output_tokens") not in (None, "", 0)

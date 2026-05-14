@@ -8,8 +8,7 @@ import type {
   InboxResolveRequest,
   ModelRegistry,
   PendingInstall,
-  Persona,
-  PersonaCapability,
+  PermissionPrompt,
   SettingsPatch,
   SettingsView,
   Snapshot,
@@ -143,40 +142,24 @@ export const api = {
       body: req,
     }),
 
-  // ---- Identity grant/deny -----------------------------------------------
-  grantIdentity: (gap_id: string, note = "") =>
-    http<{ finding: unknown }>(
-      `/api/edit/gaps/${encodeURIComponent(gap_id)}/grant-identity`,
-      { method: "POST", body: { note } },
-    ),
-  denyIdentity: (gap_id: string, reason = "") =>
-    http<{ finding: unknown }>(
-      `/api/edit/gaps/${encodeURIComponent(gap_id)}/deny-identity`,
-      { method: "POST", body: { reason } },
-    ),
   unpauseGap: (gap_id: string) =>
     http<{ finding: unknown }>(
       `/api/edit/gaps/${encodeURIComponent(gap_id)}/unpause`,
       { method: "POST" },
     ),
 
-  // ---- Personas ---------------------------------------------------------
-  listPersonas: () => http<Persona[]>("/api/personas"),
-  getPersona: (name: string) =>
-    http<Persona>(`/api/personas/${encodeURIComponent(name)}`),
-  upsertPersonaCapability: (
-    name: string,
-    key: string,
-    patch: Partial<PersonaCapability> & { status: PersonaCapability["status"] },
-  ) =>
-    http<Persona>(
-      `/api/personas/${encodeURIComponent(name)}/capabilities/${encodeURIComponent(key)}`,
-      { method: "POST", body: patch },
+  // ---- Synchronous permission prompts -------------------------------------
+  pendingPermissions: () =>
+    http<PermissionPrompt[]>("/api/permissions/pending"),
+  grantPermission: (id: string, note?: string | null) =>
+    http<PermissionPrompt>(
+      `/api/permissions/${encodeURIComponent(id)}/grant`,
+      { method: "POST", body: { note: note ?? null } },
     ),
-  setPersonaBackedByRealHuman: (name: string, backed: boolean) =>
-    http<Persona>(
-      `/api/personas/${encodeURIComponent(name)}/backed-by-real-human`,
-      { method: "POST", body: { backed_by_real_human: backed } },
+  denyPermission: (id: string, note?: string | null) =>
+    http<PermissionPrompt>(
+      `/api/permissions/${encodeURIComponent(id)}/deny`,
+      { method: "POST", body: { note: note ?? null } },
     ),
 
   // ---- Drone-attached chat + computer-use --------------------------------

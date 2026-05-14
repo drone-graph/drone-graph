@@ -22,7 +22,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from drone_graph.signals.store import ClaimRecord, InstallRecord
+from drone_graph.signals.store import ClaimRecord, InstallRecord, PermissionRecord
 
 _SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 
@@ -51,6 +51,22 @@ def _row_to_install(row: sqlite3.Row | tuple[Any, ...]) -> InstallRecord:
         installed_at=row[2],
         install_commands=json.loads(row[3]),
         usage=row[4],
+    )
+
+
+def _row_to_permission(row: sqlite3.Row | tuple[Any, ...]) -> PermissionRecord:
+    return PermissionRecord(
+        id=row[0],
+        drone_id=row[1],
+        gap_id=row[2],
+        tier=row[3],
+        tool_name=row[4],
+        category=row[5],
+        summary=row[6],
+        status=row[7],
+        created_at=row[8],
+        resolved_at=row[9],
+        resolver_note=row[10],
     )
 
 
@@ -392,6 +408,94 @@ class SQLiteSignalStore:
             ).fetchone()
         return float(row[0]) if row else 0.0
 
+    # ---- Synchronous permission prompts -----------------------------------
+
+    _PERMISSION_COLUMNS = (
+        "id, drone_id, gap_id, tier, tool_name, category, summary, "
+        "status, created_at, resolved_at, resolver_note"
+    )
+
+    def request_permission(
+        self,
+        request_id: str,
+        drone_id: str,
+        gap_id: str,
+        tier: str,
+        tool_name: str,
+        category: str,
+        summary: str,
+    ) -> PermissionRecord:
+        now = _now()
+        with self._lock:
+            self._conn.execute(
+                "INSERT OR IGNORE INTO permissions "
+                "(id, drone_id, gap_id, tier, tool_name, category, summary, "
+                " status, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)",
+                (request_id, drone_id, gap_id, tier, tool_name, category,
+                 summary, now),
+            )
+            row = self._conn.execute(
+                f"SELECT {self._PERMISSION_COLUMNS} FROM permissions WHERE id=?",
+                (request_id,),
+            ).fetchone()
+        return _row_to_permission(row)
+
+    def get_permission(self, request_id: str) -> PermissionRecord | None:
+        with self._lock:
+            row = self._conn.execute(
+                f"SELECT {self._PERMISSION_COLUMNS} FROM permissions WHERE id=?",
+                (request_id,),
+            ).fetchone()
+        return _row_to_permission(row) if row else None
+
+    def list_pending_permissions(self) -> list[PermissionRecord]:
+        with self._lock:
+            rows = self._conn.execute(
+                f"SELECT {self._PERMISSION_COLUMNS} FROM permissions "
+                "WHERE status='pending' ORDER BY created_at ASC"
+            ).fetchall()
+        return [_row_to_permission(r) for r in rows]
+
+    def resolve_permission(
+        self,
+        request_id: str,
+        *,
+        granted: bool,
+        note: str | None,
+    ) -> PermissionRecord | None:
+        status = "granted" if granted else "denied"
+        now = _now()
+        with self._lock:
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                cur = self._conn.execute(
+                    "UPDATE permissions "
+                    "SET status=?, resolved_at=?, resolver_note=? "
+                    "WHERE id=? AND status='pending'",
+                    (status, now, note, request_id),
+                )
+                updated = cur.rowcount == 1
+                row = self._conn.execute(
+                    f"SELECT {self._PERMISSION_COLUMNS} FROM permissions "
+                    "WHERE id=?",
+                    (request_id,),
+                ).fetchone()
+                self._conn.execute("COMMIT")
+            except Exception:
+                self._conn.execute("ROLLBACK")
+                raise
+        if not updated or row is None:
+            return None
+        return _row_to_permission(row)
+
+    def consume_permission(self, request_id: str) -> None:
+        with self._lock:
+            self._conn.execute(
+                "DELETE FROM permissions WHERE id=?",
+                (request_id,),
+            )
+
     # ---- Lifecycle --------------------------------------------------------
 
     def reset_all(self) -> None:
@@ -400,3 +504,4 @@ class SQLiteSignalStore:
             self._conn.execute("DELETE FROM installs")
             self._conn.execute("DELETE FROM provider_buckets")
             self._conn.execute("DELETE FROM cost_meter")
+            self._conn.execute("DELETE FROM permissions")

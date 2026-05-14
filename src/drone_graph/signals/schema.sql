@@ -35,3 +35,23 @@ CREATE TABLE IF NOT EXISTS cost_meter (
   spent_usd    REAL NOT NULL DEFAULT 0,
   started_at   REAL NOT NULL
 );
+
+-- Synchronous permission prompts. A drone tool dispatcher inserts a row
+-- (status='pending'), polls for it to flip to 'granted' or 'denied', and
+-- carries the operator's note back to the LLM as a tool result. The UI
+-- consumes pending rows and writes the resolution.
+CREATE TABLE IF NOT EXISTS permissions (
+  id            TEXT    PRIMARY KEY,
+  drone_id      TEXT    NOT NULL,
+  gap_id        TEXT    NOT NULL,
+  tier          TEXT    NOT NULL,    -- 'ask_external' | 'ask_everything'
+  tool_name     TEXT    NOT NULL,
+  category      TEXT    NOT NULL,    -- 'local' | 'external'
+  summary       TEXT    NOT NULL,
+  status        TEXT    NOT NULL,    -- 'pending' | 'granted' | 'denied'
+  created_at    REAL    NOT NULL,
+  resolved_at   REAL,
+  resolver_note TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_permissions_status ON permissions(status);
+CREATE INDEX IF NOT EXISTS idx_permissions_drone  ON permissions(drone_id);

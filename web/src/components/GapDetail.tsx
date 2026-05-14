@@ -44,18 +44,6 @@ export function GapDetailOverlay() {
               <Show when={gap()!.paused}>
                 <span class="tag copper" title="operator paused this gap">paused</span>
               </Show>
-              <Show when={gap()!.uses_operator_identity}>
-                <Show
-                  when={gap()!.identity_approved}
-                  fallback={
-                    <span class="tag amber" title="awaiting your approval in the action inbox">
-                      identity: pending
-                    </span>
-                  }
-                >
-                  <span class="tag teal">identity: approved</span>
-                </Show>
-              </Show>
               <span class="mono faint" style={{ "font-size": "var(--fs-xs)" }}>
                 {gap()!.id}
               </span>

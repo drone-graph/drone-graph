@@ -22,12 +22,9 @@ export function Settings() {
   const [maxBrowsers, setMaxBrowsers] = createSignal(
     String(store.settings?.max_concurrent_browsers ?? 4),
   );
-  const [allowOperatorIdentity, setAllowOperatorIdentity] = createSignal(
-    !!store.settings?.allow_operator_identity,
-  );
-  const [redactPatterns, setRedactPatterns] = createSignal(
-    (store.settings?.identity_redaction_patterns ?? []).join("\n"),
-  );
+  const [permissionTier, setPermissionTier] = createSignal<
+    "open" | "ask_external" | "ask_everything"
+  >(store.settings?.permission_tier ?? "ask_external");
   const [saving, setSaving] = createSignal(false);
   const [savedAt, setSavedAt] = createSignal<Date | null>(null);
   const [error, setError] = createSignal<string | null>(null);
@@ -101,11 +98,7 @@ export function Settings() {
         ...(maxBrowsers().trim() !== "" && {
           max_concurrent_browsers: Math.max(1, Number(maxBrowsers().trim())),
         }),
-        allow_operator_identity: allowOperatorIdentity(),
-        identity_redaction_patterns: redactPatterns()
-          .split("\n")
-          .map((s) => s.trim())
-          .filter(Boolean),
+        permission_tier: permissionTier(),
       });
       await refreshSettings();
       setAnthropicKey("");
@@ -306,41 +299,30 @@ export function Settings() {
           </Field>
         </Section>
 
-        <Section title="identity firewall">
-          <Field label="allow drones to use your identity?">
-            <label class="row" style={{ gap: "6px" }}>
-              <input
-                type="checkbox"
-                checked={allowOperatorIdentity()}
-                onChange={(e) =>
-                  setAllowOperatorIdentity(e.currentTarget.checked)
-                }
-                style={{ width: "auto" }}
-              />
-              <span class="dim" style={{ "font-size": "var(--fs-sm)" }}>
-                Gap Finding can flag specific gaps as needing your real
-                $HOME / env / accounts; each one waits for your approval
-                in the action inbox before dispatch. Off: drones always
-                run isolated.
-              </span>
-            </label>
-          </Field>
-          <Field label="redaction patterns">
-            <textarea
-              rows={4}
-              value={redactPatterns()}
-              onInput={(e) => setRedactPatterns(e.currentTarget.value)}
-              style={{
-                width: "100%",
-                "font-family": "var(--font-mono)",
-                "font-size": "var(--fs-sm)",
-              }}
-            />
-            <span class="dim" style={{ "font-size": "var(--fs-xs)" }}>
-              One per line. These strings are masked out of any drone
-              tool output (one safety net against accidental leaks from
-              system calls like git log or env). Short tokens
-              (&lt;4 chars) are skipped automatically.
+        <Section title="permissions">
+          <Field label="permission tier">
+            <select
+              value={permissionTier()}
+              onChange={(e) =>
+                setPermissionTier(
+                  e.currentTarget.value as
+                    | "open"
+                    | "ask_external"
+                    | "ask_everything",
+                )
+              }
+            >
+              <option value="open">open — no prompts</option>
+              <option value="ask_external">
+                ask before external actions
+              </option>
+              <option value="ask_everything">
+                ask before every action
+              </option>
+            </select>
+            <span class="dim" style={{ "font-size": "var(--fs-xs)", "margin-left": "8px" }}>
+              Drones always have full access. The tier governs which
+              tool calls block for your approval.
             </span>
           </Field>
         </Section>

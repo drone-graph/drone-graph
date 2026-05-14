@@ -322,7 +322,6 @@ function typeTag(t: InboxActionType): string {
     purchase: "copper",
     approval: "amber",
     mfa: "amber",
-    identity: "amber",
     other: "graphite",
   }[t];
 }

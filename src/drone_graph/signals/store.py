@@ -40,6 +40,27 @@ class InstallRecord:
     usage: str | None
 
 
+@dataclass(frozen=True)
+class PermissionRecord:
+    """A synchronous permission prompt awaiting (or carrying) an operator
+    decision. The dispatcher writes it, polls until ``status`` flips, then
+    deletes it. Lifetimes are short: pending rows live until the operator
+    answers; resolved rows are read once and removed.
+    """
+
+    id: str
+    drone_id: str
+    gap_id: str
+    tier: str
+    tool_name: str
+    category: str
+    summary: str
+    status: str
+    created_at: float
+    resolved_at: float | None
+    resolver_note: str | None
+
+
 class SignalStore(Protocol):
     """Cross-process coordination primitives.
 
@@ -147,6 +168,46 @@ class SignalStore(Protocol):
 
     def spent(self, run_id: str) -> float:
         """Total spend recorded against ``run_id``. 0.0 if no meter."""
+        ...
+
+    # ---- Synchronous permission prompts -----------------------------------
+
+    def request_permission(
+        self,
+        request_id: str,
+        drone_id: str,
+        gap_id: str,
+        tier: str,
+        tool_name: str,
+        category: str,
+        summary: str,
+    ) -> PermissionRecord:
+        """Insert a pending permission request. The dispatcher polls until it
+        resolves, then removes the row. Idempotent on ``request_id``."""
+        ...
+
+    def get_permission(self, request_id: str) -> PermissionRecord | None:
+        """Read a single permission row by id."""
+        ...
+
+    def list_pending_permissions(self) -> list[PermissionRecord]:
+        """All rows whose status is still ``pending``, oldest first."""
+        ...
+
+    def resolve_permission(
+        self,
+        request_id: str,
+        *,
+        granted: bool,
+        note: str | None,
+    ) -> PermissionRecord | None:
+        """Flip a pending row to granted/denied. Returns the updated record,
+        or None if no pending row exists for ``request_id``."""
+        ...
+
+    def consume_permission(self, request_id: str) -> None:
+        """Delete a permission row (whatever its status). Called by the
+        dispatcher after it has read the resolution."""
         ...
 
     # ---- Lifecycle --------------------------------------------------------

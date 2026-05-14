@@ -245,9 +245,6 @@ def _gap_to_dto(g: Any) -> GapDTO:
         tool_suggestions=list(g.tool_suggestions),
         context_preload=list(g.context_preload),
         preset_kind=g.preset_kind,
-        uses_operator_identity=bool(getattr(g, "uses_operator_identity", False)),
-        identity_approved=bool(getattr(g, "identity_approved", False)),
-        identity_denied_reason=getattr(g, "identity_denied_reason", None),
         max_output_tokens=getattr(g, "max_output_tokens", None),
         paused=bool(getattr(g, "paused", False)),
     )

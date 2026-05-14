@@ -40,7 +40,7 @@ from drone_graph.api.events import EventBus
 from drone_graph.api.routers import chat as chat_router
 from drone_graph.api.routers import control as control_router
 from drone_graph.api.routers import edit as edit_router
-from drone_graph.api.routers import personas as personas_router
+from drone_graph.api.routers import permissions as permissions_router
 from drone_graph.api.routers import settings as settings_router
 from drone_graph.api.routers import stream as stream_router
 from drone_graph.api.routers import substrate as substrate_router
@@ -207,7 +207,7 @@ def build_app(
     app.include_router(stream_router.router)
     app.include_router(settings_router.router)
     app.include_router(chat_router.router)
-    app.include_router(personas_router.router)
+    app.include_router(permissions_router.router)
 
     dist = _find_web_dist()
     if dist is not None:

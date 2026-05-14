@@ -33,9 +33,6 @@ export interface Gap {
   tool_suggestions: string[];
   context_preload: string[];
   preset_kind: string | null;
-  uses_operator_identity?: boolean;
-  identity_approved?: boolean;
-  identity_denied_reason?: string | null;
   max_output_tokens?: number | null;
   /** True when the operator paused this gap via "not right now" on an
    *  inbox item. The scheduler skips paused gaps until /unpause is hit. */
@@ -181,9 +178,8 @@ export interface SettingsView {
   sound_enabled: boolean;
   tier_overrides: Record<string, Record<string, string>>;
   max_concurrent_browsers: number;
-  allow_operator_identity: boolean;
-  identity_acknowledged: boolean;
-  identity_redaction_patterns: string[];
+  permission_tier: "open" | "ask_external" | "ask_everything";
+  permission_tier_acknowledged: boolean;
   settings_path: string;
   updated_at: string;
 }
@@ -199,37 +195,8 @@ export interface SettingsPatch {
   sound_enabled?: boolean | null;
   tier_overrides?: Record<string, Record<string, string>> | null;
   max_concurrent_browsers?: number | null;
-  allow_operator_identity?: boolean | null;
-  identity_acknowledged?: boolean | null;
-  identity_redaction_patterns?: string[] | null;
-}
-
-// ---- Personas -----------------------------------------------------------
-
-export type CapabilityStatus = "pending" | "registered" | "verified";
-
-export interface PersonaCapability {
-  key: string;
-  desired_value: string | null;
-  actual_value: string | null;
-  status: CapabilityStatus;
-  credential_ref: string | null;
-  notes: string | null;
-  updated_at: string;
-  verified_at: string | null;
-}
-
-export interface Persona {
-  name: string;
-  display_name: string;
-  backed_by_real_human: boolean;
-  bio: string | null;
-  notes: string | null;
-  ssh_fingerprint: string | null;
-  browser_profiles: string[];
-  capabilities: PersonaCapability[];
-  created_at: string;
-  created_by_drone_id: string | null;
+  permission_tier?: "open" | "ask_external" | "ask_everything" | null;
+  permission_tier_acknowledged?: boolean | null;
 }
 
 export type InboxActionType =
@@ -239,7 +206,6 @@ export type InboxActionType =
   | "purchase"
   | "approval"
   | "mfa"
-  | "identity"
   | "other";
 
 export interface InboxItem {
@@ -270,6 +236,25 @@ export interface InboxResolveRequest {
     | "skipped";
   note?: string | null;
   external_id?: string | null;
+}
+
+// ---- Permission prompts --------------------------------------------------
+
+export interface PermissionPrompt {
+  id: string;
+  drone_id: string;
+  gap_id: string;
+  /** Operator tier active when the request was raised. */
+  tier: "ask_external" | "ask_everything";
+  tool_name: string;
+  /** ``local`` = touches the machine, ``external`` = reaches the world. */
+  category: "local" | "external" | "unknown";
+  /** One-line operator-readable description of what's about to run. */
+  summary: string;
+  status: "pending" | "granted" | "denied";
+  created_at: number;
+  resolved_at: number | null;
+  resolver_note: string | null;
 }
 
 // ---- Model registry ------------------------------------------------------

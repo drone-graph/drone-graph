@@ -19,6 +19,7 @@ import type {
   Gap,
   InboxItem,
   PendingInstall,
+  PermissionPrompt,
   SettingsView,
   Snapshot,
   StreamEvent,
@@ -95,11 +96,15 @@ interface SubstrateStore {
   selected_gap_id: string | null;
   selected_finding_id: string | null;
   focused_drone_gap_id: string | null;
-  view: "console" | "findings" | "marketplace" | "personas" | "internals" | "settings";
+  view: "console" | "findings" | "marketplace" | "internals" | "settings";
   flash_gap_id: string | null;
   alignment_pulse_gap_id: string | null;
   settings: SettingsView | null;
   inbox: InboxItem[];
+  /** Pending synchronous permission prompts. Refreshed on
+   *  ``permission.request`` / ``permission.resolved`` SSE events and via
+   *  a slow poll while the modal is mounted. */
+  permission_prompts: PermissionPrompt[];
   /** Last-known browser state per gap. ``null`` = drone has no active
    *  Chromium window. The DroneAttachedChat panel reads from here. */
   browser_state: Record<string, BrowserSnapshot | null>;
@@ -127,6 +132,7 @@ const initial: SubstrateStore = {
   alignment_pulse_gap_id: null,
   settings: null,
   inbox: [],
+  permission_prompts: [],
   browser_state: {},
   drone_chat: {},
 };
@@ -137,14 +143,16 @@ export { store };
 // ---- Bootstrap -------------------------------------------------------------
 
 export async function loadSnapshot(): Promise<void> {
-  const [snap, sv, inbox] = await Promise.all([
+  const [snap, sv, inbox, perms] = await Promise.all([
     api.snapshot(),
     api.settings().catch(() => null),
     api.inbox().catch(() => [] as InboxItem[]),
+    api.pendingPermissions().catch(() => [] as PermissionPrompt[]),
   ]);
   applySnapshot(snap);
   if (sv) setStore("settings", sv);
   setStore("inbox", inbox ?? []);
+  setStore("permission_prompts", perms ?? []);
 }
 
 export async function refreshSettings(): Promise<void> {
@@ -158,6 +166,14 @@ export async function refreshSettings(): Promise<void> {
 export async function refreshInbox(): Promise<void> {
   try {
     setStore("inbox", await api.inbox());
+  } catch {
+    /* ignore */
+  }
+}
+
+export async function refreshPermissionPrompts(): Promise<void> {
+  try {
+    setStore("permission_prompts", await api.pendingPermissions());
   } catch {
     /* ignore */
   }
@@ -557,6 +573,14 @@ export function ingestEvent(ev: StreamEvent): void {
   }
   if (kind === "user.inbox_resolved") {
     void refreshInbox();
+  }
+  if (kind === "permission.request" || kind === "permission.resolved") {
+    // The dispatcher is blocked until we answer. Refresh immediately so
+    // the modal mounts within a tick of the request landing.
+    void refreshPermissionPrompts();
+    if (kind === "permission.request") {
+      playSound("alert");
+    }
   }
   // Heuristic: any new finding might be a fresh `requires_user_action`. We
   // re-poll the inbox cheaply; the endpoint is small.

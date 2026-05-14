@@ -15,12 +15,12 @@ import { FindingsGraph } from "./components/FindingsGraph";
 import { GapDetailOverlay } from "./components/GapDetail";
 import { Internals } from "./components/Internals";
 import { Marketplace } from "./components/Marketplace";
-import { Personas } from "./components/Personas";
 import { OnboardingBudget } from "./components/OnboardingBudget";
-import { OnboardingIdentity } from "./components/OnboardingIdentity";
 import { OnboardingKey } from "./components/OnboardingKey";
+import { OnboardingPermissions } from "./components/OnboardingPermissions";
 import { OnboardingSeed } from "./components/OnboardingSeed";
 import { ParanoidModal } from "./components/ParanoidModal";
+import { PermissionPromptModal } from "./components/PermissionPromptModal";
 import { RestartBanner } from "./components/RestartBanner";
 import { Settings } from "./components/Settings";
 import { SubstrateCanvas } from "./components/SubstrateCanvas";
@@ -32,6 +32,7 @@ import {
   ingestEvent,
   isUnconfigured,
   loadSnapshot,
+  refreshPermissionPrompts,
   setConnected,
   startVitalsPolling,
   store,
@@ -122,11 +123,18 @@ export function App() {
     const offConn = stream.onConnection(setConnected);
     stream.start();
     const stopPoll = startVitalsPolling();
+    // Slow fallback poll for permission prompts so a dropped SSE event
+    // can't strand a blocked drone. SSE remains the fast path.
+    const permTimer = window.setInterval(
+      () => void refreshPermissionPrompts(),
+      4000,
+    );
     onCleanup(() => {
       offEv();
       offConn();
       stream.stop();
       stopPoll();
+      window.clearInterval(permTimer);
     });
 
     const onClickOnce = () => {
@@ -199,7 +207,6 @@ export function App() {
               fallback={
                 store.view === "findings" ? <FindingsGraph />
                 : store.view === "marketplace" ? <Marketplace />
-                : store.view === "personas" ? <Personas />
                 : store.view === "internals" ? <Internals />
                 : <Settings />
               }
@@ -209,10 +216,10 @@ export function App() {
           </div>
 
           {/* Onboarding overlays sit above the dashboard until done.
-              Sequenced: key → budget → identity → seed.
-              Budget and identity gates are *acknowledgement-driven* —
+              Sequenced: key → budget → permissions → seed.
+              Budget and permissions gates are *acknowledgement-driven* —
               they don't care whether the substrate has gaps. If the
-              operator hasn't explicitly answered the budget / identity
+              operator hasn't explicitly answered the budget / permissions
               question yet, ask. (Earlier these required isEmpty() too;
               that left the operator stranded on the dashboard whenever
               a stray gap survived a wipe.)
@@ -233,16 +240,16 @@ export function App() {
             when={
               !isUnconfigured() &&
               store.settings?.cost_ceiling_acknowledged &&
-              !store.settings?.identity_acknowledged
+              !store.settings?.permission_tier_acknowledged
             }
           >
-            <OnboardingIdentity />
+            <OnboardingPermissions />
           </Show>
           <Show
             when={
               !isUnconfigured() &&
               store.settings?.cost_ceiling_acknowledged &&
-              store.settings?.identity_acknowledged &&
+              store.settings?.permission_tier_acknowledged &&
               isEmpty()
             }
           >
@@ -250,6 +257,7 @@ export function App() {
           </Show>
         </Show>
         <ParanoidModal />
+        <PermissionPromptModal />
         <Show when={dashboardRevealed()}>
           <ActionBanner />
           <RestartBanner />

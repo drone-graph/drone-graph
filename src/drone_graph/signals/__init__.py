@@ -14,6 +14,7 @@ from drone_graph.signals.sqlite import SQLiteSignalStore
 from drone_graph.signals.store import (
     ClaimRecord,
     InstallRecord,
+    PermissionRecord,
     SignalStore,
     default_db_path,
 )
@@ -21,6 +22,7 @@ from drone_graph.signals.store import (
 __all__ = [
     "ClaimRecord",
     "InstallRecord",
+    "PermissionRecord",
     "SQLiteSignalStore",
     "SignalStore",
     "default_db_path",

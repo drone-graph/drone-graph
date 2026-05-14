@@ -15,8 +15,6 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
-
 from drone_graph.api.models import (
     CancelDroneRequest,
     ChatRequest,
@@ -149,46 +147,6 @@ def cancel_drone(gap_id: str, req: CancelDroneRequest) -> dict[str, Any]:
     return {"ok": True}
 
 
-# ---- Identity approval ---------------------------------------------------
-#
-# Operator-facing endpoints for the per-gap "approve operator-identity"
-# flow. Triggered from the inbox UI when the scheduler has surfaced a
-# requires_user_action finding asking permission to use the operator's
-# real $HOME / env / cwd for a specific gap.
-
-
-class _IdentityGrantRequest(BaseModel):
-    note: str = ""
-
-
-class _IdentityDenyRequest(BaseModel):
-    reason: str = ""
-
-
-@router.post("/gaps/{gap_id}/grant-identity")
-def grant_identity(gap_id: str, req: _IdentityGrantRequest) -> dict[str, Any]:
-    s = get_state()
-    g = s.store.get(gap_id)
-    if g is None:
-        raise HTTPException(status_code=404, detail=f"no gap {gap_id}")
-    if not getattr(g, "uses_operator_identity", False):
-        raise HTTPException(
-            status_code=400,
-            detail="gap does not request operator identity",
-        )
-    tick = _next_tick(s)
-    finding = s.store.apply_grant_identity(
-        gap_id=gap_id, tick=tick, note=req.note, author=FindingAuthor.user
-    )
-    s.event_bus.publish(
-        "user.identity_granted",
-        tick=tick,
-        gap_id=gap_id,
-        finding_id=finding.id,
-    )
-    return {"finding": _finding_to_dto(finding).model_dump()}
-
-
 @router.post("/gaps/{gap_id}/unpause")
 def unpause_gap(gap_id: str) -> dict[str, Any]:
     """Resume a gap the operator paused via the action-inbox
@@ -204,28 +162,6 @@ def unpause_gap(gap_id: str) -> dict[str, Any]:
     )
     s.event_bus.publish(
         "user.gap_unpaused", tick=tick, gap_id=gap_id, finding_id=finding.id
-    )
-    return {"finding": _finding_to_dto(finding).model_dump()}
-
-
-@router.post("/gaps/{gap_id}/deny-identity")
-def deny_identity(gap_id: str, req: _IdentityDenyRequest) -> dict[str, Any]:
-    s = get_state()
-    g = s.store.get(gap_id)
-    if g is None:
-        raise HTTPException(status_code=404, detail=f"no gap {gap_id}")
-    tick = _next_tick(s)
-    finding = s.store.apply_deny_identity(
-        gap_id=gap_id,
-        reason=req.reason or "denied by operator",
-        tick=tick,
-        author=FindingAuthor.user,
-    )
-    s.event_bus.publish(
-        "user.identity_denied",
-        tick=tick,
-        gap_id=gap_id,
-        finding_id=finding.id,
     )
     return {"finding": _finding_to_dto(finding).model_dump()}
 
