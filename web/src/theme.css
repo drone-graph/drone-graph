@@ -48,7 +48,8 @@
   --fs-xl: 22px;
   --fs-2xl: 32px;
 
-  /* Geometry */
+  /* Geometry. Rail widths scale down on narrower desktops so the center
+   * canvas keeps useful space. See media queries below. */
   --topbar-h: 40px;
   --drawer-h: 40px;
   --drawer-h-open: 220px;
@@ -234,6 +235,28 @@ textarea {
 .tag.graphite {
   border-color: var(--graphite);
   color: var(--fg-2);
+}
+
+/* Desktop responsiveness: rails scale down to preserve the center canvas.
+ * Below ~1024px the layout still works but the rails become tight; this is
+ * a desktop tool, mobile is explicitly out of scope. */
+@media (max-width: 1440px) {
+  :root {
+    --rail-w-left: 280px;
+    --rail-w-right: 280px;
+  }
+}
+@media (max-width: 1280px) {
+  :root {
+    --rail-w-left: 250px;
+    --rail-w-right: 250px;
+  }
+}
+@media (max-width: 1080px) {
+  :root {
+    --rail-w-left: 220px;
+    --rail-w-right: 220px;
+  }
 }
 
 @keyframes heartbeat {

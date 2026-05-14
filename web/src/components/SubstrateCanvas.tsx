@@ -194,25 +194,42 @@ export function SubstrateCanvas() {
   }
 
   function drawEdges(ctx: CanvasRenderingContext2D): void {
-    ctx.lineWidth = 0.6;
+    // Quadratic Bézier curves: gentle downward bow. The control point is
+    // pulled perpendicular to the edge by a fraction of the edge length,
+    // biased so preset → child edges drape naturally downward.
+    ctx.lineWidth = 0.9;
+    ctx.lineCap = "round";
     for (const e of edges) {
       const src = typeof e.source === "string" ? null : e.source;
       const tgt = typeof e.target === "string" ? null : e.target;
       if (!src || !tgt) continue;
       const a = pickAuthorAccent(tgt.gap.status);
+      const dx = tgt.x - src.x;
+      const dy = tgt.y - src.y;
+      const len = Math.hypot(dx, dy) || 1;
+      // Perpendicular offset, sign chosen so the curve bows toward +y (down)
+      // for the top-down preset tree. For sibling edges this still produces
+      // a consistent gentle arc.
+      const perpSign = dx >= 0 ? 1 : -1;
+      const bow = Math.min(40, len * 0.18);
+      const mx = (src.x + tgt.x) / 2 + (-dy / len) * bow * perpSign;
+      const my = (src.y + tgt.y) / 2 + (dx / len) * bow * perpSign;
       const grad = ctx.createLinearGradient(src.x, src.y, tgt.x, tgt.y);
-      grad.addColorStop(0, "rgba(60, 110, 245, 0.18)");
+      grad.addColorStop(0, "rgba(94, 136, 255, 0.12)");
       grad.addColorStop(1, a + "55");
       ctx.strokeStyle = grad;
       ctx.beginPath();
       ctx.moveTo(src.x, src.y);
-      ctx.lineTo(tgt.x, tgt.y);
+      ctx.quadraticCurveTo(mx, my, tgt.x, tgt.y);
       ctx.stroke();
     }
   }
 
   function drawNodes(ctx: CanvasRenderingContext2D, t: number): void {
     const beat = 0.5 + 0.5 * Math.sin((t / HEARTBEAT_MS) * Math.PI * 2);
+    // Slow ~3-second sine for the breathing aurora — independent of the
+    // heartbeat so the two don't lock visually.
+    const breath = 0.5 + 0.5 * Math.sin((t / 2800) * Math.PI * 2);
     const selected = store.selected_gap_id;
     const pulseGap = store.alignment_pulse_gap_id;
     const findingsByGap = new Map<string, number>();
@@ -228,51 +245,83 @@ export function SubstrateCanvas() {
       const findingCount = findingsByGap.get(g.id) ?? 0;
       const baseR = g.preset_kind ? 18 : 12 + Math.min(14, Math.log2(1 + findingCount) * 4);
       const isActive = activeGapIds.has(g.id);
-      const activityPulse = isActive ? 1 + 0.25 * beat : 1 + 0.04 * (beat - 0.5);
+      const activityPulse = isActive ? 1 + 0.18 * beat : 1 + 0.03 * (beat - 0.5);
       const r = baseR * activityPulse;
       const accent = pickAuthorAccent(g.status);
+      const auroraAccent = pickAuroraAccent(g.status);
 
-      // Outer glow.
-      const glowR = r * 3.2;
-      const glowGrad = ctx.createRadialGradient(n.x, n.y, r * 0.6, n.x, n.y, glowR);
-      glowGrad.addColorStop(0, accent + (isActive ? "80" : "40"));
-      glowGrad.addColorStop(1, "rgba(0,0,0,0)");
-      ctx.fillStyle = glowGrad;
+      // Breathing aurora — soft multi-stop halo with a slow alpha & radius
+      // modulation. Replaces the harsher single-stop glow with something
+      // that reads as a living atmosphere around the node.
+      const auroraBase = r * 2.6;
+      const auroraR = auroraBase + (isActive ? 12 : 6) * breath;
+      const auroraAlphaMid = isActive ? 0.32 : 0.14;
+      const auroraAlphaOuter = isActive ? 0.10 : 0.04;
+      const auroraGrad = ctx.createRadialGradient(
+        n.x,
+        n.y,
+        r * 0.55,
+        n.x,
+        n.y,
+        auroraR,
+      );
+      auroraGrad.addColorStop(0, hexWithAlpha(auroraAccent, auroraAlphaMid * (0.85 + 0.15 * breath)));
+      auroraGrad.addColorStop(0.45, hexWithAlpha(auroraAccent, auroraAlphaOuter));
+      auroraGrad.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = auroraGrad;
       ctx.beginPath();
-      ctx.arc(n.x, n.y, glowR, 0, Math.PI * 2);
+      ctx.arc(n.x, n.y, auroraR, 0, Math.PI * 2);
       ctx.fill();
 
-      // Core.
+      // Sonar rings — only for active drones. Three rings expanding outward
+      // on a 2.4-second cycle, phase-staggered, fading as they grow. Reads
+      // clearly across the canvas as "this gap is being worked".
+      if (isActive) {
+        for (let i = 0; i < 3; i++) {
+          const phase = ((t / 2400) + i / 3) % 1;
+          const ringR = r + phase * 56;
+          const ringAlpha = (1 - phase) * 0.35;
+          ctx.strokeStyle = hexWithAlpha(auroraAccent, ringAlpha);
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.arc(n.x, n.y, ringR, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+      }
+
+      // Core — softer gradient with a subtle inner highlight in the upper
+      // left and a dimmer rim. Less saturated than the prior version so the
+      // canvas feels jewel-toned rather than neon.
       const coreGrad = ctx.createRadialGradient(
-        n.x - r * 0.3,
-        n.y - r * 0.3,
-        r * 0.1,
+        n.x - r * 0.35,
+        n.y - r * 0.35,
+        r * 0.12,
         n.x,
         n.y,
         r,
       );
-      coreGrad.addColorStop(0, lighten(accent));
-      coreGrad.addColorStop(0.55, accent);
-      coreGrad.addColorStop(1, "rgba(0,0,0,0.6)");
+      coreGrad.addColorStop(0, softHighlight(accent));
+      coreGrad.addColorStop(0.5, accent);
+      coreGrad.addColorStop(1, darken(accent));
       ctx.fillStyle = coreGrad;
       ctx.beginPath();
       ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
       ctx.fill();
 
-      // Preset ring outline.
+      // Preset ring outline — thin, low-alpha so it reads as classification
+      // rather than a hard frame.
       if (g.preset_kind) {
-        ctx.strokeStyle = accent + "cc";
-        ctx.lineWidth = 1.2;
+        ctx.strokeStyle = hexWithAlpha(accent, 0.65);
+        ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.arc(n.x, n.y, r + 4, 0, Math.PI * 2);
         ctx.stroke();
-        ctx.fillStyle = "var(--fg-1)";
       }
 
-      // Alignment pulse.
+      // Alignment pulse — keeps the existing semantic; just softened.
       if (pulseGap === g.id) {
-        ctx.strokeStyle = "rgba(245, 181, 60, 0.85)";
-        ctx.lineWidth = 1.4;
+        ctx.strokeStyle = "rgba(245, 181, 60, 0.7)";
+        ctx.lineWidth = 1.2;
         ctx.beginPath();
         ctx.arc(n.x, n.y, r + 8 + beat * 6, 0, Math.PI * 2);
         ctx.stroke();
@@ -665,11 +714,25 @@ function authorTag(a: Finding["author"]): string {
   }[a];
 }
 
+// Slightly muted jewel tones for the core gradient. Less neon than the prior
+// pure-saturated cobalt/teal; reads as polished material rather than glowing
+// pixels.
 function pickAuthorAccent(status: Gap["status"]): string {
   return {
-    unfilled: "#3c6ef5", // cobalt
-    filled: "#7fe5d0", // teal
-    retired: "#2a2f38", // graphite
+    unfilled: "#5b87e5", // softened cobalt
+    filled: "#9be0cf", // softened turquoise
+    retired: "#3a4358", // dim graphite
+  }[status];
+}
+
+// A separate, more chromatic accent used for the aurora and sonar rings —
+// gives the halo a hint of color shift versus the core so the node doesn't
+// flatten visually.
+function pickAuroraAccent(status: Gap["status"]): string {
+  return {
+    unfilled: "#7aa4ff", // light cobalt
+    filled: "#9be8d4", // bright turquoise
+    retired: "#586278", // graphite-blue
   }[status];
 }
 
@@ -679,8 +742,40 @@ function droneColor(d: ActiveDrone): string {
   return "#6fd0a8";
 }
 
-function lighten(hex: string): string {
-  return hex + "ee";
+function softHighlight(hex: string): string {
+  const { r, g, b } = parseHex(hex);
+  // Lift toward white by 35% — a soft specular without bleaching.
+  const lr = Math.round(r + (255 - r) * 0.35);
+  const lg = Math.round(g + (255 - g) * 0.35);
+  const lb = Math.round(b + (255 - b) * 0.35);
+  return rgbToHex(lr, lg, lb);
+}
+
+function darken(hex: string): string {
+  const { r, g, b } = parseHex(hex);
+  // Pull toward near-black for the rim; keeps a hint of hue so the gradient
+  // doesn't dead-end on a flat grey.
+  return rgbToHex(
+    Math.round(r * 0.18),
+    Math.round(g * 0.18),
+    Math.round(b * 0.22),
+  );
+}
+
+function hexWithAlpha(hex: string, alpha: number): string {
+  const { r, g, b } = parseHex(hex);
+  return `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(3)})`;
+}
+
+function parseHex(hex: string): { r: number; g: number; b: number } {
+  const h = hex.startsWith("#") ? hex.slice(1) : hex;
+  const n = parseInt(h, 16);
+  return { r: (n >> 16) & 0xff, g: (n >> 8) & 0xff, b: n & 0xff };
+}
+
+function rgbToHex(r: number, g: number, b: number): string {
+  const c = (r << 16) | (g << 8) | b;
+  return "#" + c.toString(16).padStart(6, "0");
 }
 
 function truncate(s: string, n: number): string {

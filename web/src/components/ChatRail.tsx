@@ -1,4 +1,12 @@
-import { For, Show, createEffect, createMemo, createSignal, onMount } from "solid-js";
+import {
+  For,
+  Show,
+  createEffect,
+  createMemo,
+  createSignal,
+  onCleanup,
+  onMount,
+} from "solid-js";
 
 import { api } from "../api";
 import { playSound, unlockAudio } from "../sound";
@@ -7,7 +15,22 @@ import { inboxResolutions, selectGap, store } from "../state";
 export function ChatRail() {
   const [text, setText] = createSignal("");
   const [sending, setSending] = createSignal(false);
+  // True when the bottom sentinel is in the scroll viewport — i.e. the user
+  // is reading the tail of the conversation. Auto-scroll only fires while
+  // this is true; if they've scrolled up to read history, new messages
+  // accumulate behind a "jump to latest" pill instead of yanking them back.
+  const [atBottom, setAtBottom] = createSignal(true);
+  const [unread, setUnread] = createSignal(0);
   let scrollRef: HTMLDivElement | undefined;
+  let bottomRef: HTMLDivElement | undefined;
+
+  function scrollToBottom(smooth = false) {
+    if (!scrollRef) return;
+    scrollRef.scrollTo({
+      top: scrollRef.scrollHeight,
+      behavior: smooth ? "smooth" : "auto",
+    });
+  }
 
   async function submit(e?: SubmitEvent | KeyboardEvent) {
     if (e) e.preventDefault();
@@ -19,27 +42,50 @@ export function ChatRail() {
       await api.chat(v);
       playSound("prompt");
       setText("");
-      // Auto-scroll on send.
-      setTimeout(() => scrollRef?.scrollTo(0, scrollRef.scrollHeight), 40);
+      setTimeout(() => scrollToBottom(true), 40);
     } finally {
       setSending(false);
     }
   }
 
   onMount(() => {
-    setTimeout(() => scrollRef?.scrollTo(0, scrollRef.scrollHeight), 50);
+    // Initial render: snap to bottom.
+    setTimeout(() => scrollToBottom(false), 50);
+    if (bottomRef && scrollRef) {
+      const io = new IntersectionObserver(
+        (entries) => {
+          for (const entry of entries) {
+            const isVisible = entry.isIntersecting;
+            setAtBottom(isVisible);
+            if (isVisible) setUnread(0);
+          }
+        },
+        {
+          root: scrollRef,
+          // Treat "within ~40px of bottom" as at-bottom so a small scroll
+          // wobble doesn't strand the user out of auto-scroll mode.
+          rootMargin: "0px 0px 40px 0px",
+          threshold: 0,
+        },
+      );
+      io.observe(bottomRef);
+      onCleanup(() => io.disconnect());
+    }
   });
 
-  // Auto-scroll to bottom when new messages arrive — but only if the
-  // operator was already near the bottom. If they've scrolled up to
-  // re-read history, don't yank them back to the tail.
+  // New messages: stick to bottom if the user is reading the tail, otherwise
+  // bump the unread counter for the jump-to-latest pill.
+  let lastLen = 0;
   createEffect(() => {
-    void store.chat.length; // dep
-    if (!scrollRef) return;
-    const dist = scrollRef.scrollHeight - scrollRef.scrollTop - scrollRef.clientHeight;
-    if (dist < 80) {
-      // Wait a frame for the new message to render then scroll.
-      setTimeout(() => scrollRef?.scrollTo(0, scrollRef.scrollHeight), 30);
+    const len = store.chat.length;
+    const delta = len - lastLen;
+    lastLen = len;
+    if (delta <= 0) return;
+    if (atBottom()) {
+      // Wait a frame for the new message to render then scroll smoothly.
+      requestAnimationFrame(() => scrollToBottom(true));
+    } else {
+      setUnread((u) => u + delta);
     }
   });
 
@@ -145,7 +191,20 @@ export function ChatRail() {
             no messages yet. type below to send a signal into the swarm.
           </div>
         </Show>
+        <div ref={bottomRef} class="bottom-sentinel" />
       </div>
+      <Show when={!atBottom() && unread() > 0}>
+        <button
+          class="jump-latest"
+          onClick={() => {
+            setUnread(0);
+            scrollToBottom(true);
+          }}
+          title="jump to latest"
+        >
+          ↓ {unread()} new
+        </button>
+      </Show>
       <form onSubmit={submit} class="composer">
         <textarea
           placeholder="speak to the hivemind…"
@@ -176,7 +235,30 @@ export function ChatRail() {
           border-right: 1px solid var(--border);
           height: 100%;
           min-height: 0;
+          position: relative;
         }
+        .bottom-sentinel {
+          height: 1px;
+          flex-shrink: 0;
+        }
+        .jump-latest {
+          position: absolute;
+          left: 50%;
+          transform: translateX(-50%);
+          bottom: calc(120px + 8px);
+          padding: 4px 10px;
+          font-size: var(--fs-xs);
+          letter-spacing: 0.04em;
+          background: var(--cobalt-dim);
+          border: 1px solid var(--cobalt);
+          color: var(--fg-0);
+          border-radius: 999px;
+          cursor: pointer;
+          box-shadow: 0 4px 14px rgba(60, 110, 245, 0.35);
+          z-index: 2;
+          transition: background-color 120ms var(--ease);
+        }
+        .jump-latest:hover { background: var(--cobalt); }
         .chat-head {
           padding: 12px 14px 8px;
           border-bottom: 1px solid var(--border);

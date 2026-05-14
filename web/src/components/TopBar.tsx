@@ -83,16 +83,13 @@ export function TopBar() {
     }
   }
 
-  function toggleParanoid() {
-    const enabled = !status()?.paranoid_install;
-    void api.setParanoid(enabled);
-  }
-
   return (
     <div class="topbar">
       <div class="brand">
         <span class="dot" />
-        <span class="title">DRONE GRAPH · MISSION CONTROL</span>
+        <span class="title">
+          DRONE GRAPH<span class="title-long"> · MISSION CONTROL</span>
+        </span>
         <span class="dim" style={{ "margin-left": "10px" }} title="provider — workers and presets route per-tier; hover any active drone in the right rail to see its specific model">
           {status()?.provider ?? "—"}
           <Show when={activeModelsSummary()}>
@@ -166,28 +163,6 @@ export function TopBar() {
         <InboxBadge />
         <button class="ghost" onClick={togglePause} title="pause / resume">
           {status()?.paused ? "▶" : "❚❚"}
-        </button>
-        <button
-          class="ghost"
-          onClick={() => void api.forceTick("gap_finding")}
-          title="force a gap finding tick"
-        >
-          gf↻
-        </button>
-        <button
-          class="ghost"
-          onClick={() => void api.forceTick("alignment")}
-          title="force an alignment tick"
-        >
-          align↻
-        </button>
-        <button
-          class="ghost"
-          onClick={toggleParanoid}
-          classList={{ active: !!status()?.paranoid_install }}
-          title="paranoid install mode"
-        >
-          {status()?.paranoid_install ? "🔒" : "🔓"}
         </button>
         <button class="ghost" onClick={toggleSound} title="sound">
           {soundOn() ? "♪" : "·"}
@@ -271,10 +246,10 @@ function CeilingEditor(props: { close: () => void }) {
 const TOPBAR_CSS = `
 .topbar {
   display: grid;
-  grid-template-columns: minmax(280px, 1fr) auto 220px auto auto;
+  grid-template-columns: minmax(160px, 1fr) auto minmax(140px, 220px) auto auto;
   align-items: center;
-  gap: 16px;
-  padding: 0 14px;
+  gap: 12px;
+  padding: 0 12px;
   height: var(--topbar-h);
   background: var(--bg-1);
   border-bottom: 1px solid var(--border);
@@ -289,6 +264,29 @@ const TOPBAR_CSS = `
   gap: 8px;
   font-weight: 500;
   letter-spacing: 0.08em;
+  min-width: 0;
+  overflow: hidden;
+}
+.brand .title { white-space: nowrap; }
+.brand > .dim {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Narrow desktop: drop the provider/active-models tail. */
+@media (max-width: 1320px) {
+  .brand > .dim { display: none; }
+}
+/* Narrower: shorten the title to "DRONE GRAPH". */
+@media (max-width: 1200px) {
+  .brand .title-long { display: none; }
+}
+/* Narrower still: hide the (xx s) tick suffix and the cost label dim suffix. */
+@media (max-width: 980px) {
+  .state .faint { display: none; }
+  .cost .label .dim { display: none; }
 }
 .brand .dot {
   width: 8px;
