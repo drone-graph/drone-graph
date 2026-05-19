@@ -67,6 +67,17 @@ def _err_result(name: str, e: Exception) -> ToolResult:
                                 "a row is auto-exited as runaway."
                             ),
                         },
+                        "max_worker_turns": {
+                            "type": "integer",
+                            "description": (
+                                "Override the global worker max_turns (20) "
+                                "for this child. Set higher (e.g. 60) for "
+                                "complex multi-step gaps like account "
+                                "creation that need room for skill install, "
+                                "browser navigation, form fills, and "
+                                "verification. Omit for the default."
+                            ),
+                        },
                     },
                     "required": ["intent", "criteria"],
                 },
@@ -131,6 +142,15 @@ def decompose(args: dict[str, Any], ctx: DroneContext) -> ToolResult:
                     "for narrow gaps; raise for synthesis."
                 ),
             },
+            "max_worker_turns": {
+                "type": "integer",
+                "description": (
+                    "Override the global 20-turn worker default for complex "
+                    "multi-step gaps (e.g. account creation) that need room "
+                    "to install skills, run browsers, and handle errors "
+                    "without hitting the turn cap prematurely."
+                ),
+            },
         },
         "required": ["intent", "criteria", "rationale"],
     },
@@ -162,6 +182,11 @@ def create(args: dict[str, Any], ctx: DroneContext) -> ToolResult:
             max_output_tokens=(
                 int(args["max_output_tokens"])
                 if args.get("max_output_tokens") not in (None, "", 0)
+                else None
+            ),
+            max_worker_turns=(
+                int(args["max_worker_turns"])
+                if args.get("max_worker_turns") not in (None, "", 0)
                 else None
             ),
         )

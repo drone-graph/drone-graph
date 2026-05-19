@@ -19,6 +19,7 @@ fresh checkout.
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import shutil
 import socket
@@ -41,6 +42,7 @@ from drone_graph.api.routers import chat as chat_router
 from drone_graph.api.routers import control as control_router
 from drone_graph.api.routers import edit as edit_router
 from drone_graph.api.routers import permissions as permissions_router
+from drone_graph.api.routers import profiles as profiles_router
 from drone_graph.api.routers import settings as settings_router
 from drone_graph.api.routers import stream as stream_router
 from drone_graph.api.routers import substrate as substrate_router
@@ -101,6 +103,7 @@ def maybe_start_controller(settings: cfg.Settings | None = None) -> bool:
         model=resolved_model,
         event_bus=state.event_bus,
         tier_overrides=s.tier_overrides,
+        workspace_dir=Path(cfg._effective_workspace_dir(s)),
     )
     if s.default_cost_ceiling_usd is not None:
         controller.set_cost_ceiling(s.default_cost_ceiling_usd)
@@ -208,6 +211,7 @@ def build_app(
     app.include_router(settings_router.router)
     app.include_router(chat_router.router)
     app.include_router(permissions_router.router)
+    app.include_router(profiles_router.router)
 
     dist = _find_web_dist()
     if dist is not None:
@@ -328,7 +332,7 @@ def _neo4j_bolt_ready(uri: str, timeout_s: float = 2.0) -> bool:
             return True
         finally:
             driver.close()
-    except Exception:  # noqa: BLE001 — any failure means "not ready yet"
+    except Exception:
         return False
 
 
@@ -397,6 +401,29 @@ def _parse_bolt(uri: str) -> tuple[str, int]:
     return rest, 7687
 
 
+# ---- Logging ---------------------------------------------------------------
+
+
+def _configure_logging() -> None:
+    """Set up a root StreamHandler so every module-level logger actually emits.
+
+    Uvicorn ships its own dictConfig that replaces the root logger. We
+    call this *before* uvicorn starts and pass ``log_config=None`` so our
+    configuration survives and application logs (scheduler, drones, tools)
+    appear alongside uvicorn's access log.
+    """
+    if not logging.getLogger().handlers:
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
+            datefmt="%H:%M:%S",
+            stream=sys.stderr,
+        )
+    # Silence the extremely noisy watchfiles re-scanner (one INFO line
+    # per second in reload mode). Keep uvicorn.error for startup messages.
+    logging.getLogger("watchfiles.main").setLevel(logging.WARNING)
+
+
 # ---- Entry point -----------------------------------------------------------
 
 
@@ -424,6 +451,7 @@ def serve(
         _ensure_frontend_built()
         _ensure_neo4j()
 
+    _configure_logging()
     if reload:
         os.environ["DRONE_GRAPH_API_PROVIDER"] = provider or ""
         os.environ["DRONE_GRAPH_API_MODEL"] = model or ""
@@ -437,6 +465,7 @@ def serve(
             host=host,
             port=port,
             reload=True,
+            log_config=None,
         )
         return
 
@@ -452,7 +481,7 @@ def serve(
     # ``/api/drones/active`` and ``/api/snapshot`` 200s, masking real
     # signal (errors, drone events emitted by the scheduler tape).
     _install_uvicorn_access_filter()
-    uvicorn.run(app, host=host, port=port, reload=False)
+    uvicorn.run(app, host=host, port=port, reload=False, log_config=None)
 
 
 _POLL_ENDPOINTS_TO_HIDE = (
@@ -475,7 +504,7 @@ def _install_uvicorn_access_filter() -> None:
         def filter(self, record: logging.LogRecord) -> bool:
             try:
                 msg = record.getMessage()
-            except Exception:  # noqa: BLE001
+            except Exception:
                 return True
             for ep in _POLL_ENDPOINTS_TO_HIDE:
                 # Only suppress 2xx polling lines. A 500/404 on the same

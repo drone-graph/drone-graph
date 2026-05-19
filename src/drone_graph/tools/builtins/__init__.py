@@ -10,6 +10,7 @@ from drone_graph.tools.builtins import (
     concurrency,
     queries,
     registry_admin,
+    skill_registry,
     structural,
     worker,
 )
@@ -20,6 +21,7 @@ __all__ = [
     "concurrency",
     "queries",
     "registry_admin",
+    "skill_registry",
     "structural",
     "worker",
 ]

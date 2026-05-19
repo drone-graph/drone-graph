@@ -1,0 +1,9 @@
+{
+  "name": "google-account-creation",
+  "version": "1.0.0",
+  "description": "Create a new Google account using the headed browser.",
+  "tags": ["account-creation", "google", "browser", "signup"],
+  "author": "drone-graph",
+  "requires_browser": true,
+  "requires_phone": true
+}

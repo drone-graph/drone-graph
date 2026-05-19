@@ -193,6 +193,11 @@ class GapStore:
                     if c.get("max_output_tokens") not in (None, "")
                     else None
                 ),
+                max_worker_turns=(
+                    int(c["max_worker_turns"])
+                    if c.get("max_worker_turns") not in (None, "")
+                    else None
+                ),
             )
             for c in children
             if c["intent"].strip().lower() not in existing_intents_lc
@@ -222,6 +227,7 @@ class GapStore:
             "  context_preload: [], preset_kind: null, "
             "  reasoning_effort: child.reasoning_effort, "
             "  max_output_tokens: child.max_output_tokens, "
+            "  max_worker_turns: child.max_worker_turns, "
             "  paused: false "
             "}) "
             "CREATE (p)-[:PARENT_OF]->(c) "
@@ -254,6 +260,7 @@ class GapStore:
                     "tool_suggestions": list(c.tool_suggestions),
                     "reasoning_effort": c.reasoning_effort,
                     "max_output_tokens": c.max_output_tokens,
+                    "max_worker_turns": c.max_worker_turns,
                 }
                 for c in child_records
             ],
@@ -283,6 +290,7 @@ class GapStore:
         tool_suggestions: list[str] | None = None,
         reasoning_effort: str | None = None,
         max_output_tokens: int | None = None,
+        max_worker_turns: int | None = None,
     ) -> Finding:
         new_gap = Gap(
             intent=intent,
@@ -292,6 +300,7 @@ class GapStore:
             tool_suggestions=list(tool_suggestions or []),
             reasoning_effort=reasoning_effort,
             max_output_tokens=max_output_tokens,
+            max_worker_turns=max_worker_turns,
         )
         finding = Finding(
             tick=tick,
@@ -309,6 +318,7 @@ class GapStore:
             "  context_preload: [], preset_kind: null, "
             "  reasoning_effort: $reasoning_effort, "
             "  max_output_tokens: $max_output_tokens, "
+            "  max_worker_turns: $max_worker_turns, "
             "  paused: false "
             "}) "
             "CREATE (f:Finding { "
@@ -330,6 +340,7 @@ class GapStore:
             tool_suggestions=list(new_gap.tool_suggestions),
             reasoning_effort=new_gap.reasoning_effort,
             max_output_tokens=new_gap.max_output_tokens,
+            max_worker_turns=new_gap.max_worker_turns,
             finding_id=finding.id,
             tick=tick,
             author=author.value,

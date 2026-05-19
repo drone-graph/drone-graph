@@ -54,7 +54,7 @@ DEFAULT_ALIGNMENT_EVERY = 3
 DEFAULT_MAX_GF = 15
 DEFAULT_WORKER_EVERY = 0  # 0 = do not spawn real workers
 DEFAULT_WORKER_MAX_TURNS = 20
-DEFAULT_PRESET_MAX_TURNS = 6  # preset drones rarely need more
+DEFAULT_PRESET_MAX_TURNS = 10  # preset drones need room for skill scanning + decomposition
 MAX_CONSECUTIVE_GF_ERRORS = 3
 _RUN_ARTIFACT_ENCODING = "utf-8"
 
@@ -408,6 +408,11 @@ def run_combined_loop(
                     worker_count += 1
                     attempted_gap_ids.add(target.id)
                     t0 = time.time()
+                    max_turns = (
+                        target.max_worker_turns
+                        if target.max_worker_turns is not None
+                        else worker_max_turns
+                    )
                     try:
                         w = run_drone(
                             target,
@@ -415,7 +420,7 @@ def run_combined_loop(
                             tool_store=tool_store,
                             client=client,
                             tick=tick,
-                            max_turns=worker_max_turns,
+                            max_turns=max_turns,
                             tape=tape,
                         )
                     except Exception as e:  # noqa: BLE001

@@ -150,6 +150,13 @@ class Gap(BaseModel):
     # 16384. Pair with the runtime's runaway guard (3 cap-hits in a row
     # exits the drone) which catches mis-budgeted gaps cheaply.
     max_output_tokens: int | None = None
+    # Optional per-gap override for the number of turns a worker drone gets
+    # when dispatched against this gap. When set, the scheduler uses this
+    # value instead of ``DEFAULT_WORKER_MAX_TURNS`` (20). GF sets this on
+    # complex multi-step gaps (e.g. account creation) so the worker has
+    # room to install skills, run browsers, and handle errors without
+    # hitting the turn cap prematurely.
+    max_worker_turns: int | None = None
     # Operator-side pause: distinct from ``status='retired'``. A paused
     # gap stays unfilled but the scheduler refuses to dispatch against
     # it until the operator clears the pause. Used by the action-inbox

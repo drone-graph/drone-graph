@@ -12,7 +12,7 @@
 import { batch, createEffect, createSignal } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 
-import { api } from "./api";
+import { api, type AuthenticatedConfig } from "./api";
 import type {
   ActiveDrone,
   Finding,
@@ -81,6 +81,14 @@ export interface DroneChatMessage {
   finding_id?: string;
 }
 
+// ---- Authenticated profile state ------------------------------------------
+
+export interface AuthenticatedProfileState {
+  has_profile: boolean;
+  cdp_running: boolean;
+  config: AuthenticatedConfig | null;
+}
+
 interface SubstrateStore {
   loaded: boolean;
   status: SwarmStatus | null;
@@ -96,7 +104,7 @@ interface SubstrateStore {
   selected_gap_id: string | null;
   selected_finding_id: string | null;
   focused_drone_gap_id: string | null;
-  view: "console" | "tools" | "settings";
+  view: "console" | "tools" | "browser" | "settings";
   flash_gap_id: string | null;
   alignment_pulse_gap_id: string | null;
   settings: SettingsView | null;
@@ -110,6 +118,8 @@ interface SubstrateStore {
   browser_state: Record<string, BrowserSnapshot | null>;
   /** Operator ↔ drone chat threads. Per-gap (one drone per gap). */
   drone_chat: Record<string, DroneChatMessage[]>;
+  /** Authenticated Chrome profile status (Google-authenticated lane). */
+  authenticated_profile: AuthenticatedProfileState;
 }
 
 const initial: SubstrateStore = {
@@ -135,6 +145,11 @@ const initial: SubstrateStore = {
   permission_prompts: [],
   browser_state: {},
   drone_chat: {},
+  authenticated_profile: {
+    has_profile: false,
+    cdp_running: false,
+    config: null,
+  },
 };
 
 const [store, setStore] = createStore<SubstrateStore>(initial);
@@ -174,6 +189,19 @@ export async function refreshInbox(): Promise<void> {
 export async function refreshPermissionPrompts(): Promise<void> {
   try {
     setStore("permission_prompts", await api.pendingPermissions());
+  } catch {
+    /* ignore */
+  }
+}
+
+export async function refreshAuthenticatedProfile(): Promise<void> {
+  try {
+    const status = await api.authenticatedProfileStatus();
+    setStore("authenticated_profile", {
+      has_profile: status.has_profile,
+      cdp_running: status.cdp_running,
+      config: null, // config is fetched separately when needed
+    });
   } catch {
     /* ignore */
   }

@@ -25,3 +25,7 @@ version. The short one:
 """
 
 from drone_graph.tools.builtins.browser import tool  # noqa: F401 — eager register
+
+# Authenticated Chrome profile lane (second browser, separate from Playwright).
+# Registers ``cm_authenticated_browser`` and ``cm_check_auth_profile``.
+from drone_graph.tools.builtins.browser import authenticated  # noqa: F401 — eager register

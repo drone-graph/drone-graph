@@ -11,9 +11,20 @@ build/
 .env
 .env.local
 eenv
+eenv.txt
 .pytest_cache/
 var/
+workspace/
 
+
+# Node / web frontend
+web/node_modules/
+web/dist/
+
+# AI agent working directories + plans
+.kilo/
+.roo/
+plans/
 
 # graphify (knowledge graph outputs + local cache)
 graphify-out/
