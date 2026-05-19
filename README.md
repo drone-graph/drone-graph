@@ -2,16 +2,13 @@
 
 **Run your AI org like a species.**
 
-Multi-agent AI is cosplay. Drone Graph is what an AI workforce looks like when you stop pretending it's a company.
+The Borg got it right, and so did Ultron, and so do bees and ants. *Current multi-agent AI systems are just cosplay*. Drone Graph is what an AI workforce looks like when you stop pretending it's a company.
 
-Identical agents. Identical system prompts. One shared mind.
-There's no hierarchy and no roles. Work organizes around what's missing, not around reporting structures.
-
-*The Borg got it right. So did Ultron. So do bees and ants.*
+Think: **Identical agents. Identical prompts. One shared hivemind.** There's no hierarchy and no roles, and work organizes around what's missing, not around reporting structures.
 
 ---
 
-## What every drone reads on boot:
+## The prompt every drone reads on boot:
 
 > You are ephemeral. You are one of many. Your body dies when your gap is done.
 >
