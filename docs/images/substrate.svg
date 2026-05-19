@@ -1,0 +1,220 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 460" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, monospace" role="img" aria-labelledby="title desc">
+  <title id="title">Substrate canvas — preset gaps, emergent gaps, drones, findings</title>
+  <desc id="desc">An animated graph: two preset gaps at the top with sonar pulses, an emergent root below with four children, drones orbiting active gaps, findings settling as satellites.</desc>
+
+  <defs>
+    <radialGradient id="auroraCobalt" cx="50%" cy="50%" r="50%">
+      <stop offset="0%"  stop-color="#7aa4ff" stop-opacity="0.45"/>
+      <stop offset="50%" stop-color="#7aa4ff" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="#7aa4ff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="auroraTeal" cx="50%" cy="50%" r="50%">
+      <stop offset="0%"  stop-color="#9be8d4" stop-opacity="0.40"/>
+      <stop offset="50%" stop-color="#9be8d4" stop-opacity="0.10"/>
+      <stop offset="100%" stop-color="#9be8d4" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="auroraAmber" cx="50%" cy="50%" r="50%">
+      <stop offset="0%"  stop-color="#f5b53c" stop-opacity="0.40"/>
+      <stop offset="50%" stop-color="#f5b53c" stop-opacity="0.10"/>
+      <stop offset="100%" stop-color="#f5b53c" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="auroraPurple" cx="50%" cy="50%" r="50%">
+      <stop offset="0%"  stop-color="#b48cff" stop-opacity="0.42"/>
+      <stop offset="50%" stop-color="#b48cff" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="#b48cff" stop-opacity="0"/>
+    </radialGradient>
+
+    <radialGradient id="coreCobalt" cx="35%" cy="35%" r="65%">
+      <stop offset="0%"  stop-color="#9bbcff"/>
+      <stop offset="50%" stop-color="#5b87e5"/>
+      <stop offset="100%" stop-color="#142546"/>
+    </radialGradient>
+    <radialGradient id="coreTeal" cx="35%" cy="35%" r="65%">
+      <stop offset="0%"  stop-color="#cef5e9"/>
+      <stop offset="50%" stop-color="#9be0cf"/>
+      <stop offset="100%" stop-color="#1d3a35"/>
+    </radialGradient>
+    <radialGradient id="coreAmber" cx="35%" cy="35%" r="65%">
+      <stop offset="0%"  stop-color="#fcdb8e"/>
+      <stop offset="50%" stop-color="#f5b53c"/>
+      <stop offset="100%" stop-color="#46340e"/>
+    </radialGradient>
+    <radialGradient id="corePurple" cx="35%" cy="35%" r="65%">
+      <stop offset="0%"  stop-color="#dac9ff"/>
+      <stop offset="50%" stop-color="#b48cff"/>
+      <stop offset="100%" stop-color="#2c1f4e"/>
+    </radialGradient>
+
+    <linearGradient id="edge" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%"  stop-color="#5e88ff" stop-opacity="0.20"/>
+      <stop offset="100%" stop-color="#7fe5d0" stop-opacity="0.45"/>
+    </linearGradient>
+
+    <pattern id="grain" x="0" y="0" width="3" height="3" patternUnits="userSpaceOnUse">
+      <circle cx="1.5" cy="1.5" r="0.45" fill="#ffffff" opacity="0.03"/>
+    </pattern>
+
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="2"/>
+      <feComposite in2="SourceGraphic" operator="atop"/>
+    </filter>
+  </defs>
+
+  <rect width="800" height="460" fill="#070a0f"/>
+  <rect width="800" height="460" fill="url(#grain)"/>
+
+  <!-- caption -->
+  <text x="24" y="34" fill="#9aa4b8" font-size="11" letter-spacing="0.08em">SUBSTRATE · 9 GAPS · 3 DRONES LIVE</text>
+  <text x="776" y="34" text-anchor="end" fill="#5e6b82" font-size="10">tick 042 · alignment·gf·worker</text>
+
+  <!-- edges (preset → root, root → children) -->
+  <g fill="none" stroke-linecap="round">
+    <path d="M 280,130 Q 320,180 380,220" stroke="url(#edge)" stroke-width="1.2"/>
+    <path d="M 520,130 Q 480,180 420,220" stroke="url(#edge)" stroke-width="1.2"/>
+    <path d="M 400,240 Q 350,290 280,330" stroke="url(#edge)" stroke-width="1"/>
+    <path d="M 400,240 Q 380,300 360,360" stroke="url(#edge)" stroke-width="1"/>
+    <path d="M 400,240 Q 450,300 500,360" stroke="url(#edge)" stroke-width="1"/>
+    <path d="M 400,240 Q 480,300 580,330" stroke="url(#edge)" stroke-width="1"/>
+  </g>
+
+  <!-- preset: gap_finding (purple, active — sonar) -->
+  <g transform="translate(280, 120)">
+    <circle r="42" fill="url(#auroraPurple)">
+      <animate attributeName="r" values="38;46;38" dur="2.8s" repeatCount="indefinite"/>
+    </circle>
+    <circle r="22" fill="url(#corePurple)"/>
+    <circle r="26" fill="none" stroke="#b48cff" stroke-opacity="0.65"/>
+    <!-- sonar rings -->
+    <circle r="30" fill="none" stroke="#b48cff" stroke-opacity="0">
+      <animate attributeName="r" values="22;70" dur="2.4s" repeatCount="indefinite"/>
+      <animate attributeName="stroke-opacity" values="0.35;0" dur="2.4s" repeatCount="indefinite"/>
+    </circle>
+    <circle r="30" fill="none" stroke="#b48cff" stroke-opacity="0">
+      <animate attributeName="r" values="22;70" dur="2.4s" begin="0.8s" repeatCount="indefinite"/>
+      <animate attributeName="stroke-opacity" values="0.35;0" dur="2.4s" begin="0.8s" repeatCount="indefinite"/>
+    </circle>
+    <circle r="30" fill="none" stroke="#b48cff" stroke-opacity="0">
+      <animate attributeName="r" values="22;70" dur="2.4s" begin="1.6s" repeatCount="indefinite"/>
+      <animate attributeName="stroke-opacity" values="0.35;0" dur="2.4s" begin="1.6s" repeatCount="indefinite"/>
+    </circle>
+    <text y="58" text-anchor="middle" fill="#9aa4b8" font-size="10" letter-spacing="0.04em">GAP_FINDING</text>
+    <!-- orbiting GF drone -->
+    <g>
+      <animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="3.6s" repeatCount="indefinite"/>
+      <g transform="translate(28, 0)">
+        <circle r="3.2" fill="#b48cff" filter="url(#glow)"/>
+        <circle r="2.4" cx="-4" cy="-2" fill="#b48cff" opacity="0.55"/>
+        <circle r="1.6" cx="-8" cy="-4" fill="#b48cff" opacity="0.28"/>
+      </g>
+    </g>
+  </g>
+
+  <!-- preset: alignment (amber, idle) -->
+  <g transform="translate(520, 120)">
+    <circle r="38" fill="url(#auroraAmber)" opacity="0.65"/>
+    <circle r="20" fill="url(#coreAmber)"/>
+    <circle r="24" fill="none" stroke="#f5b53c" stroke-opacity="0.55"/>
+    <text y="56" text-anchor="middle" fill="#9aa4b8" font-size="10" letter-spacing="0.04em">ALIGNMENT</text>
+  </g>
+
+  <!-- emergent root (cobalt, focused — labelled) -->
+  <g transform="translate(400, 230)">
+    <rect x="-130" y="-44" width="260" height="22" fill="rgba(7,10,15,0.88)"/>
+    <text y="-28" text-anchor="middle" fill="#e3e8f1" font-size="11">operate DTC specialty coffee storefront</text>
+    <circle r="30" fill="url(#auroraCobalt)"/>
+    <circle r="16" fill="url(#coreCobalt)"/>
+    <!-- finding satellites in a tight ring -->
+    <g>
+      <circle cx="0" cy="-26" r="3.2" fill="#6fd0a8">
+        <animate attributeName="opacity" values="0;1;1" dur="6s" begin="0.5s" fill="freeze"/>
+      </circle>
+      <circle cx="18" cy="-19" r="3.2" fill="#6fd0a8">
+        <animate attributeName="opacity" values="0;1;1" dur="6s" begin="1.2s" fill="freeze"/>
+      </circle>
+      <circle cx="26" cy="0" r="3.2" fill="#6fd0a8">
+        <animate attributeName="opacity" values="0;1;1" dur="6s" begin="1.9s" fill="freeze"/>
+      </circle>
+      <circle cx="18" cy="19" r="3.2" fill="#b48cff">
+        <animate attributeName="opacity" values="0;1;1" dur="6s" begin="2.6s" fill="freeze"/>
+      </circle>
+      <circle cx="-18" cy="19" r="3.2" fill="#f5b53c">
+        <animate attributeName="opacity" values="0;1;1" dur="6s" begin="3.3s" fill="freeze"/>
+      </circle>
+      <circle cx="-26" cy="0" r="3.2" fill="#6fd0a8">
+        <animate attributeName="opacity" values="0;1;1" dur="6s" begin="4.0s" fill="freeze"/>
+      </circle>
+      <circle cx="-18" cy="-19" r="3.2" fill="#6fd0a8">
+        <animate attributeName="opacity" values="0;1;1" dur="6s" begin="4.7s" fill="freeze"/>
+      </circle>
+    </g>
+  </g>
+
+  <!-- children -->
+  <!-- filled (teal) -->
+  <g transform="translate(280, 340)">
+    <circle r="22" fill="url(#auroraTeal)"/>
+    <circle r="13" fill="url(#coreTeal)"/>
+    <text y="32" text-anchor="middle" fill="#5e6b82" font-size="10">source greens · filled</text>
+  </g>
+
+  <!-- active worker (cobalt + sonar) -->
+  <g transform="translate(360, 370)">
+    <circle r="32" fill="url(#auroraCobalt)">
+      <animate attributeName="r" values="28;36;28" dur="2.8s" repeatCount="indefinite"/>
+    </circle>
+    <circle r="15" fill="url(#coreCobalt)"/>
+    <circle r="26" fill="none" stroke="#7aa4ff" stroke-opacity="0">
+      <animate attributeName="r" values="18;56" dur="2.4s" repeatCount="indefinite"/>
+      <animate attributeName="stroke-opacity" values="0.35;0" dur="2.4s" repeatCount="indefinite"/>
+    </circle>
+    <circle r="26" fill="none" stroke="#7aa4ff" stroke-opacity="0">
+      <animate attributeName="r" values="18;56" dur="2.4s" begin="0.8s" repeatCount="indefinite"/>
+      <animate attributeName="stroke-opacity" values="0.35;0" dur="2.4s" begin="0.8s" repeatCount="indefinite"/>
+    </circle>
+    <text y="32" text-anchor="middle" fill="#9aa4b8" font-size="10">draft outreach</text>
+    <g>
+      <animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="4s" repeatCount="indefinite"/>
+      <g transform="translate(22, 0)">
+        <circle r="3" fill="#6fd0a8" filter="url(#glow)"/>
+        <circle r="2.2" cx="-4" cy="-2" fill="#6fd0a8" opacity="0.55"/>
+        <circle r="1.4" cx="-8" cy="-4" fill="#6fd0a8" opacity="0.28"/>
+      </g>
+    </g>
+  </g>
+
+  <!-- active worker (cobalt) -->
+  <g transform="translate(500, 370)">
+    <circle r="30" fill="url(#auroraCobalt)"/>
+    <circle r="14" fill="url(#coreCobalt)"/>
+    <circle r="24" fill="none" stroke="#7aa4ff" stroke-opacity="0">
+      <animate attributeName="r" values="16;48" dur="2.4s" begin="0.4s" repeatCount="indefinite"/>
+      <animate attributeName="stroke-opacity" values="0.35;0" dur="2.4s" begin="0.4s" repeatCount="indefinite"/>
+    </circle>
+    <text y="30" text-anchor="middle" fill="#9aa4b8" font-size="10">price ladder</text>
+    <g>
+      <animateTransform attributeName="transform" type="rotate" from="360" to="0" dur="3.2s" repeatCount="indefinite"/>
+      <g transform="translate(20, 0)">
+        <circle r="3" fill="#6fd0a8" filter="url(#glow)"/>
+        <circle r="2.2" cx="-4" cy="2" fill="#6fd0a8" opacity="0.55"/>
+      </g>
+    </g>
+  </g>
+
+  <!-- filled child (teal, far right) -->
+  <g transform="translate(580, 330)">
+    <circle r="20" fill="url(#auroraTeal)"/>
+    <circle r="12" fill="url(#coreTeal)"/>
+    <text y="28" text-anchor="middle" fill="#5e6b82" font-size="10">DNS · filled</text>
+  </g>
+
+  <!-- sediment band -->
+  <g transform="translate(20, 420)">
+    <rect x="0" y="0" width="760" height="24" fill="rgba(42,47,56,0.35)"/>
+    <text x="10" y="15" fill="#9aa4b8" font-size="10">sediment · 3 retired</text>
+    <g fill="#9aa4b8" opacity="0.4">
+      <circle cx="200" cy="12" r="1.5"/><circle cx="214" cy="11" r="1.5"/>
+      <circle cx="228" cy="13" r="1.5"/><circle cx="320" cy="12" r="1.5"/>
+      <circle cx="334" cy="11" r="1.5"/><circle cx="450" cy="13" r="1.5"/>
+    </g>
+  </g>
+</svg>

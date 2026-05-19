@@ -23,10 +23,10 @@ mind persists.
 - `core-idea/` — the seed theory. Start here: `drone-theory.md`, then
   `architectural_overview.md` and `decomposition.md`.
 - `architecture-notes/` — current thinking on how the system actually works.
-  - `notes-0*.md` — raw conceptual notes.
-  - `notes-04-architecture-diagram.svg` — a rendered overview diagram.
+  - `notes-0*.md` — raw conceptual notes (largely superseded by `core-idea/architectural_overview.md` + `decomposition.md`; kept as archaeology).
   - `modules.md` — per-module intent + current CLI surface.
-  - `phase-0.md`, `phase-0-and-1.md` — phase acceptance notes and "what ships."
+  - `phase-0-and-1.md`, `phase-3-plan.md`, `Phase4-implementation.md` — phase acceptance notes and "what ships." (`phase-0.md` is superseded by `phase-0-and-1.md`; the BLOCKED_BY model it describes is gone.)
+  - `model-registry.md` — model registry JSON shape, CLI, and tier resolution.
 - `src/drone_graph/` — implementation.
   - `gaps/` — `GapStore` (Neo4j), `Gap`/`Finding` pydantic records. Gap
     fields include `tool_loadout`, `tool_suggestions`, `context_preload`,
@@ -52,10 +52,10 @@ mind persists.
 - `var/runs/` — per-run artefacts from `orchestrator.loop` (events, timeline,
   tree, summary).
 - `landing/` — standalone marketing site (`index.html` + `styles.css`). Has
-  its own `.git`. Copy uses slightly different vocabulary than the architecture
-  notes (e.g. "Findings Graph / Knowledge Graph" on the site vs. "collective
-  mind" in the notes) — the architecture notes are the source of truth; the
-  landing copy can drift and should be reconciled before launch.
+  its own `.git`. Vocabulary is aligned with the architecture notes
+  ("collective mind", "drones", "gaps", "signal protocol"). When the two
+  drift, the architecture notes win; flag the drift rather than silently
+  reconciling.
 - `defunct-ideas-ignore/` — dead drafts. Ignored via `.claudeignore`. Do not
   read.
 
@@ -122,7 +122,10 @@ notes and code; flag it rather than silently reconciling.
   dispatch and injects into the drone's initial user message — saves the
   "obvious first query" turn for the common case.
 - **Signal protocol** — the mechanical coordination layer that keeps drones
-  from conflicting (planned; not yet implemented).
+  from conflicting. Phase 3 shipped the SQLite sidecar (`signals/`) plus
+  three concurrency builtins: `cm_acquire_file`, `cm_release_file`,
+  `cm_install_package`. Not managerial, not consensus — just enough to
+  keep drones from colliding on files, installs, or ports.
 - **The terminal** — the persistent bash shell every emergent worker drone
   acts through. Dies with the drone; respawns on crash so one bad command
   doesn't kill the worker.

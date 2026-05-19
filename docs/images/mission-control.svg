@@ -1,0 +1,475 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 820" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, monospace" role="img" aria-labelledby="title desc">
+  <title id="title">Drone Graph — Mission Control console</title>
+  <desc id="desc">A dark dashboard with a left chat rail, a center substrate graph of gaps and findings with orbiting drones, and a right rail listing active drones and recently used tools.</desc>
+
+  <defs>
+    <!-- aurora halos around active gap nodes -->
+    <radialGradient id="auroraCobalt" cx="50%" cy="50%" r="50%">
+      <stop offset="0%"  stop-color="#7aa4ff" stop-opacity="0.40"/>
+      <stop offset="45%" stop-color="#7aa4ff" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="#7aa4ff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="auroraTeal" cx="50%" cy="50%" r="50%">
+      <stop offset="0%"  stop-color="#9be8d4" stop-opacity="0.32"/>
+      <stop offset="45%" stop-color="#9be8d4" stop-opacity="0.10"/>
+      <stop offset="100%" stop-color="#9be8d4" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="auroraAmber" cx="50%" cy="50%" r="50%">
+      <stop offset="0%"  stop-color="#f5b53c" stop-opacity="0.36"/>
+      <stop offset="45%" stop-color="#f5b53c" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="#f5b53c" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="auroraPurple" cx="50%" cy="50%" r="50%">
+      <stop offset="0%"  stop-color="#b48cff" stop-opacity="0.36"/>
+      <stop offset="45%" stop-color="#b48cff" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="#b48cff" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- jewel-tone gradients for the gap "cores" -->
+    <radialGradient id="coreCobalt" cx="35%" cy="35%" r="65%">
+      <stop offset="0%"  stop-color="#9bbcff"/>
+      <stop offset="50%" stop-color="#5b87e5"/>
+      <stop offset="100%" stop-color="#142546"/>
+    </radialGradient>
+    <radialGradient id="coreTeal" cx="35%" cy="35%" r="65%">
+      <stop offset="0%"  stop-color="#cef5e9"/>
+      <stop offset="50%" stop-color="#9be0cf"/>
+      <stop offset="100%" stop-color="#1d3a35"/>
+    </radialGradient>
+    <radialGradient id="coreAmber" cx="35%" cy="35%" r="65%">
+      <stop offset="0%"  stop-color="#fcdb8e"/>
+      <stop offset="50%" stop-color="#f5b53c"/>
+      <stop offset="100%" stop-color="#46340e"/>
+    </radialGradient>
+    <radialGradient id="corePurple" cx="35%" cy="35%" r="65%">
+      <stop offset="0%"  stop-color="#dac9ff"/>
+      <stop offset="50%" stop-color="#b48cff"/>
+      <stop offset="100%" stop-color="#2c1f4e"/>
+    </radialGradient>
+    <radialGradient id="coreRetired" cx="35%" cy="35%" r="65%">
+      <stop offset="0%"  stop-color="#5b6478"/>
+      <stop offset="50%" stop-color="#3a4358"/>
+      <stop offset="100%" stop-color="#0d1019"/>
+    </radialGradient>
+
+    <!-- edge gradient -->
+    <linearGradient id="edge" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%"  stop-color="#5e88ff" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="#7fe5d0" stop-opacity="0.40"/>
+    </linearGradient>
+
+    <!-- subtle particulate grain -->
+    <pattern id="grain" x="0" y="0" width="3" height="3" patternUnits="userSpaceOnUse">
+      <circle cx="1.5" cy="1.5" r="0.45" fill="#ffffff" opacity="0.025"/>
+    </pattern>
+
+    <!-- glow filter -->
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="2.2"/>
+      <feComposite in2="SourceGraphic" operator="atop"/>
+    </filter>
+  </defs>
+
+  <!-- ============================ BACKGROUND ============================ -->
+  <rect width="1400" height="820" fill="#070a0f"/>
+  <rect width="1400" height="820" fill="url(#grain)"/>
+
+  <!-- ============================ TOPBAR ============================ -->
+  <g>
+    <rect x="0" y="0" width="1400" height="40" fill="#0b0f17"/>
+    <line x1="0" y1="40" x2="1400" y2="40" stroke="#1f2532"/>
+
+    <!-- brand dot + title -->
+    <circle cx="18" cy="20" r="4" fill="#3c6ef5">
+      <animate attributeName="opacity" values="0.7;1;0.7" dur="0.8s" repeatCount="indefinite"/>
+    </circle>
+    <text x="30" y="25" fill="#e3e8f1" font-size="13" font-weight="500" letter-spacing="0.08em">DRONE GRAPH · MISSION CONTROL</text>
+    <text x="340" y="25" fill="#9aa4b8" font-size="12">anthropic</text>
+    <text x="412" y="25" fill="#5e6b82" font-size="12">· claude-haiku-4-5 ×3, claude-sonnet-4-6</text>
+
+    <!-- state -->
+    <text x="730" y="25" fill="#3c6ef5" font-size="12" font-weight="500" letter-spacing="0.04em">◉ active</text>
+    <text x="800" y="25" fill="#5e6b82" font-size="12">(38s)</text>
+
+    <!-- cost meter -->
+    <g transform="translate(880, 12)">
+      <rect x="0" y="2" width="160" height="6" rx="2" fill="#11151f" stroke="#1f2532"/>
+      <rect x="0" y="2" width="96" height="6" rx="2" fill="#3c6ef5"/>
+      <text x="160" y="22" text-anchor="end" fill="#e3e8f1" font-size="10.5" letter-spacing="0.02em">$1.92</text>
+      <text x="183" y="22" text-anchor="end" fill="#9aa4b8" font-size="10.5"> / $3.20</text>
+    </g>
+
+    <!-- nav -->
+    <g transform="translate(1110, 8)">
+      <rect x="0" y="0" width="64" height="24" rx="2" fill="#11151f"/>
+      <text x="32" y="16" text-anchor="middle" fill="#5e88ff" font-size="11">console</text>
+      <text x="86" y="16" text-anchor="middle" fill="#9aa4b8" font-size="11">tools</text>
+      <text x="148" y="16" text-anchor="middle" fill="#9aa4b8" font-size="11">settings</text>
+    </g>
+
+    <!-- actions -->
+    <g transform="translate(1290, 12)">
+      <!-- inbox badge -->
+      <circle cx="0" cy="8" r="10" fill="none" stroke="#1f2532"/>
+      <text x="0" y="12" text-anchor="middle" fill="#f5b53c" font-size="11">2</text>
+      <text x="32" y="14" fill="#9aa4b8" font-size="11">❚❚</text>
+      <text x="56" y="14" fill="#5e6b82" font-size="11">·</text>
+      <circle cx="80" cy="8" r="3" fill="#3c6ef5"/>
+    </g>
+  </g>
+
+  <!-- ============================ LEFT RAIL (CHAT) ============================ -->
+  <g>
+    <rect x="0" y="40" width="320" height="740" fill="#0b0f17"/>
+    <line x1="320" y1="40" x2="320" y2="780" stroke="#1f2532"/>
+
+    <!-- header -->
+    <line x1="0" y1="78" x2="320" y2="78" stroke="#1f2532"/>
+    <text x="16" y="65" fill="#9aa4b8" font-size="10.5" letter-spacing="0.08em">GLOBAL CHAT · THE HIVEMIND</text>
+
+    <!-- message: user -->
+    <g transform="translate(16, 96)">
+      <rect x="-4" y="-2" width="6" height="64" fill="#3c6ef5" opacity="0"/>
+      <text x="0" y="10" fill="#5e88ff" font-size="10" font-weight="600" letter-spacing="0.04em">USER</text>
+      <text x="40" y="10" fill="#5e6b82" font-size="10">→ a91c2f</text>
+      <text x="0" y="28" fill="#e3e8f1" font-size="12">operate a DTC specialty</text>
+      <text x="0" y="44" fill="#e3e8f1" font-size="12">coffee storefront</text>
+    </g>
+
+    <!-- message: gap_finding -->
+    <g transform="translate(16, 168)">
+      <text x="0" y="10" fill="#b48cff" font-size="10" font-weight="600" letter-spacing="0.04em">GAP_FINDING</text>
+      <text x="86" y="10" fill="#5e6b82" font-size="10">→ d7b0e1</text>
+      <text x="0" y="28" fill="#b48cff" font-size="12">decomposed root into</text>
+      <text x="0" y="44" fill="#b48cff" font-size="12">4 children. suppliers,</text>
+      <text x="0" y="60" fill="#b48cff" font-size="12">shopify, shipping, support.</text>
+    </g>
+
+    <!-- message: worker -->
+    <g transform="translate(16, 252)">
+      <rect x="-12" y="-4" width="2" height="64" fill="#3a8a7c"/>
+      <text x="0" y="10" fill="#7fe5d0" font-size="10" font-weight="600" letter-spacing="0.04em">DRONE</text>
+      <text x="48" y="10" fill="#5e6b82" font-size="10">→ 7a3c2e</text>
+      <text x="0" y="28" fill="#e3e8f1" font-size="12">shortlisted 3 green-coffee</text>
+      <text x="0" y="44" fill="#e3e8f1" font-size="12">suppliers; range $5.40–7.80</text>
+    </g>
+
+    <!-- action needed (amber) -->
+    <g transform="translate(16, 332)">
+      <rect x="-12" y="-4" width="2" height="80" fill="#f5b53c"/>
+      <text x="0" y="10" fill="#f5b53c" font-size="10" font-weight="600" letter-spacing="0.04em">DRONE · ACTION NEEDED</text>
+      <text x="0" y="30" fill="#e3e8f1" font-size="12">Shopify needs OAuth from a</text>
+      <text x="0" y="46" fill="#e3e8f1" font-size="12">human. Approve in the modal</text>
+      <text x="0" y="62" fill="#e3e8f1" font-size="12">to continue ingesting orders.</text>
+    </g>
+
+    <!-- alignment -->
+    <g transform="translate(16, 432)">
+      <text x="0" y="10" fill="#f5b53c" font-size="10" font-weight="600" letter-spacing="0.04em">ALIGNMENT</text>
+      <text x="74" y="10" fill="#5e6b82" font-size="10">→ d7b0e1</text>
+      <text x="0" y="28" fill="#f5b53c" font-size="12">user pivot to B2B invalidates</text>
+      <text x="0" y="44" fill="#f5b53c" font-size="12">the DTC subtree. flagging.</text>
+    </g>
+
+    <!-- system rollup -->
+    <g transform="translate(16, 512)">
+      <text x="0" y="10" fill="#687589" font-size="10" font-weight="600" letter-spacing="0.04em">SYSTEM</text>
+      <text x="0" y="28" fill="#9aa4b8" font-size="12">3 children filled → parent</text>
+      <text x="0" y="44" fill="#9aa4b8" font-size="12">rolled up. (auto)</text>
+    </g>
+
+    <!-- composer -->
+    <g>
+      <line x1="0" y1="676" x2="320" y2="676" stroke="#1f2532"/>
+      <rect x="16" y="688" width="288" height="60" rx="3" fill="none" stroke="#1f2532"/>
+      <text x="24" y="708" fill="#5e6b82" font-size="12">speak to the hivemind…</text>
+      <text x="24" y="762" fill="#5e6b82" font-size="10.5">⌘ enter</text>
+      <rect x="248" y="754" width="56" height="20" rx="3" fill="#1d3a8a" stroke="#3c6ef5"/>
+      <text x="276" y="768" text-anchor="middle" fill="#e3e8f1" font-size="11">send</text>
+    </g>
+  </g>
+
+  <!-- ============================ CENTER (SUBSTRATE CANVAS) ============================ -->
+  <g>
+    <!-- canvas bg already deep field -->
+
+    <!-- HUD: counts -->
+    <g transform="translate(336, 56)">
+      <rect x="0" y="0" width="84" height="20" rx="2" fill="#0b0f17" stroke="#2a2f38"/>
+      <text x="42" y="14" text-anchor="middle" fill="#5e6b82" font-size="10.5">17 gaps · 24 edges</text>
+      <rect x="92" y="0" width="86" height="20" rx="2" fill="#0b0f17" stroke="#2a2f38"/>
+      <text x="135" y="14" text-anchor="middle" fill="#5e6b82" font-size="10.5">5 drones live</text>
+    </g>
+
+    <!-- HUD: filters + legend -->
+    <g transform="translate(336, 86)">
+      <rect x="0" y="0" width="488" height="22" rx="3" fill="rgba(11,15,23,0.7)" stroke="#1f2532"/>
+      <rect x="6" y="3" width="92" height="16" rx="2" fill="#11151f" stroke="#1f2532"/>
+      <text x="12" y="14" fill="#9aa4b8" font-size="10">all authors ▾</text>
+      <rect x="104" y="3" width="92" height="16" rx="2" fill="#11151f" stroke="#1f2532"/>
+      <text x="110" y="14" fill="#9aa4b8" font-size="10">all kinds ▾</text>
+      <text x="208" y="14" fill="#5e6b82" font-size="10">52 / 67</text>
+      <!-- legend dots -->
+      <g transform="translate(260, 8)" font-size="10" fill="#5e6b82">
+        <circle cx="0" cy="3" r="3" fill="#3c6ef5"/><text x="8" y="6">user</text>
+        <circle cx="46" cy="3" r="3" fill="#b48cff"/><text x="54" y="6">GF</text>
+        <circle cx="84" cy="3" r="3" fill="#f5b53c"/><text x="92" y="6">align</text>
+        <circle cx="136" cy="3" r="3" fill="#6fd0a8"/><text x="144" y="6">worker</text>
+        <circle cx="194" cy="3" r="3" fill="#687589"/><text x="202" y="6">system</text>
+      </g>
+    </g>
+
+    <!-- finding ticker -->
+    <g transform="translate(336, 118)">
+      <rect x="0" y="0" width="640" height="24" fill="rgba(11,15,23,0.85)" stroke="#1f2532"/>
+      <rect x="8" y="5" width="44" height="14" rx="2" fill="none" stroke="#3c6ef5"/>
+      <text x="30" y="15" text-anchor="middle" fill="#5e88ff" font-size="10" letter-spacing="0.04em">worker</text>
+      <text x="60" y="16" fill="#9aa4b8" font-size="11">fill</text>
+      <text x="86" y="16" fill="#e3e8f1" font-size="11">DNS + Shopify storefront wired; staging passes smoke test.</text>
+    </g>
+
+    <!-- ============== GRAPH: edges first (so nodes overlay) ============== -->
+    <g stroke-linecap="round" fill="none">
+      <!-- preset → emergent root -->
+      <path d="M 540,210 Q 560,260 600,310" stroke="url(#edge)" stroke-width="1.2"/>
+      <path d="M 720,210 Q 700,260 680,310" stroke="url(#edge)" stroke-width="1.2"/>
+      <!-- root → children -->
+      <path d="M 638,330 Q 600,380 540,420" stroke="url(#edge)" stroke-width="1"/>
+      <path d="M 660,340 Q 660,400 640,460" stroke="url(#edge)" stroke-width="1"/>
+      <path d="M 670,340 Q 720,400 800,440" stroke="url(#edge)" stroke-width="1"/>
+      <path d="M 670,340 Q 770,380 880,400" stroke="url(#edge)" stroke-width="1"/>
+      <!-- subtree -->
+      <path d="M 540,440 Q 500,500 460,540" stroke="url(#edge)" stroke-width="0.9"/>
+      <path d="M 540,440 Q 540,500 540,560" stroke="url(#edge)" stroke-width="0.9"/>
+      <path d="M 640,480 Q 660,540 700,580" stroke="url(#edge)" stroke-width="0.9"/>
+      <path d="M 640,480 Q 600,540 580,600" stroke="url(#edge)" stroke-width="0.9"/>
+      <path d="M 800,460 Q 820,520 860,560" stroke="url(#edge)" stroke-width="0.9"/>
+      <path d="M 800,460 Q 760,520 740,580" stroke="url(#edge)" stroke-width="0.9"/>
+      <path d="M 880,420 Q 920,470 950,520" stroke="url(#edge)" stroke-width="0.9"/>
+    </g>
+
+    <!-- ============== PRESET GAPS (top row) ============== -->
+    <!-- gap_finding -->
+    <g transform="translate(540, 190)">
+      <circle r="40" fill="url(#auroraPurple)"/>
+      <circle r="22" fill="url(#corePurple)"/>
+      <circle r="26" fill="none" stroke="#b48cff" stroke-opacity="0.65"/>
+      <text y="44" text-anchor="middle" fill="#9aa4b8" font-size="10" letter-spacing="0.04em">GAP_FINDING</text>
+      <!-- sonar rings (active) -->
+      <circle r="32" fill="none" stroke="#b48cff" stroke-opacity="0.32"/>
+      <circle r="50" fill="none" stroke="#b48cff" stroke-opacity="0.16"/>
+      <!-- orbiting drone -->
+      <circle cx="26" cy="-8" r="3.2" fill="#b48cff" filter="url(#glow)"/>
+      <circle cx="22" cy="-14" r="2.4" fill="#b48cff" opacity="0.5"/>
+      <circle cx="16" cy="-18" r="1.6" fill="#b48cff" opacity="0.25"/>
+    </g>
+
+    <!-- alignment -->
+    <g transform="translate(720, 190)">
+      <circle r="40" fill="url(#auroraAmber)"/>
+      <circle r="22" fill="url(#coreAmber)"/>
+      <circle r="26" fill="none" stroke="#f5b53c" stroke-opacity="0.65"/>
+      <text y="44" text-anchor="middle" fill="#9aa4b8" font-size="10" letter-spacing="0.04em">ALIGNMENT</text>
+    </g>
+
+    <!-- ============== EMERGENT ROOT ============== -->
+    <g transform="translate(660, 330)">
+      <circle r="32" fill="url(#auroraCobalt)"/>
+      <circle r="18" fill="url(#coreCobalt)"/>
+      <!-- focused: full intent label above -->
+      <rect x="-110" y="-46" width="220" height="20" fill="rgba(7,10,15,0.88)"/>
+      <text y="-30" text-anchor="middle" fill="#e3e8f1" font-size="11">operate B2B wholesale coffee co.</text>
+      <!-- findings as satellites (ring) -->
+      <g fill="#6fd0a8">
+        <circle cx="0" cy="-32" r="3.5"/>
+        <circle cx="22" cy="-22" r="3.5"/>
+        <circle cx="32" cy="0" r="3.5"/>
+        <circle cx="22" cy="22" r="3.5"/>
+        <circle cx="-22" cy="-22" r="3.5"/>
+        <circle cx="-32" cy="0" r="3.5"/>
+        <circle cx="-22" cy="22" r="3.5"/>
+      </g>
+      <g fill="#b48cff">
+        <circle cx="-12" cy="32" r="3.5"/>
+        <circle cx="12" cy="32" r="3.5"/>
+      </g>
+    </g>
+
+    <!-- ============== CHILDREN ============== -->
+    <!-- filled (teal) -->
+    <g transform="translate(540, 430)">
+      <circle r="22" fill="url(#auroraTeal)"/>
+      <circle r="14" fill="url(#coreTeal)"/>
+      <text y="32" text-anchor="middle" fill="#5e6b82" font-size="10">source greens</text>
+    </g>
+
+    <!-- filled (teal) -->
+    <g transform="translate(640, 470)">
+      <circle r="22" fill="url(#auroraTeal)"/>
+      <circle r="13" fill="url(#coreTeal)"/>
+      <text y="30" text-anchor="middle" fill="#5e6b82" font-size="10">wholesale leads</text>
+    </g>
+
+    <!-- active worker (cobalt + sonar) -->
+    <g transform="translate(800, 450)">
+      <circle r="34" fill="url(#auroraCobalt)"/>
+      <circle r="16" fill="url(#coreCobalt)"/>
+      <circle r="28" fill="none" stroke="#7aa4ff" stroke-opacity="0.32"/>
+      <circle r="46" fill="none" stroke="#7aa4ff" stroke-opacity="0.18"/>
+      <circle r="62" fill="none" stroke="#7aa4ff" stroke-opacity="0.08"/>
+      <text y="32" text-anchor="middle" fill="#9aa4b8" font-size="10">draft outreach…</text>
+      <!-- orbiting worker drone with comet trail -->
+      <circle cx="22" cy="-8" r="3.2" fill="#6fd0a8" filter="url(#glow)"/>
+      <circle cx="18" cy="-14" r="2.4" fill="#6fd0a8" opacity="0.55"/>
+      <circle cx="12" cy="-18" r="1.6" fill="#6fd0a8" opacity="0.28"/>
+    </g>
+
+    <!-- active worker (cobalt) -->
+    <g transform="translate(880, 400)">
+      <circle r="30" fill="url(#auroraCobalt)"/>
+      <circle r="14" fill="url(#coreCobalt)"/>
+      <circle r="24" fill="none" stroke="#7aa4ff" stroke-opacity="0.32"/>
+      <circle r="40" fill="none" stroke="#7aa4ff" stroke-opacity="0.18"/>
+      <text y="30" text-anchor="middle" fill="#9aa4b8" font-size="10">price ladder</text>
+      <circle cx="-22" cy="6" r="3" fill="#6fd0a8" filter="url(#glow)"/>
+      <circle cx="-18" cy="14" r="2.2" fill="#6fd0a8" opacity="0.55"/>
+    </g>
+
+    <!-- leaves -->
+    <g fill="url(#coreCobalt)">
+      <circle cx="460" cy="540" r="10"/>
+      <circle cx="540" cy="560" r="10"/>
+      <circle cx="580" cy="600" r="10"/>
+      <circle cx="700" cy="580" r="11"/>
+      <circle cx="740" cy="580" r="10"/>
+      <circle cx="860" cy="560" r="10"/>
+      <circle cx="950" cy="520" r="10"/>
+    </g>
+
+    <!-- retired (sediment band hint at bottom) -->
+    <g transform="translate(336, 750)">
+      <rect x="0" y="0" width="744" height="24" fill="rgba(42,47,56,0.45)"/>
+      <text x="14" y="15" fill="#9aa4b8" font-size="10">sediment · 6 retired · click to expand</text>
+      <g fill="#9aa4b8" opacity="0.45">
+        <circle cx="232" cy="12" r="1.5"/><circle cx="246" cy="11" r="1.5"/>
+        <circle cx="260" cy="13" r="1.5"/><circle cx="274" cy="12" r="1.5"/>
+        <circle cx="288" cy="11" r="1.5"/><circle cx="302" cy="13" r="1.5"/>
+        <circle cx="380" cy="12" r="1.5"/><circle cx="394" cy="11" r="1.5"/>
+        <circle cx="408" cy="13" r="1.5"/><circle cx="500" cy="12" r="1.5"/>
+        <circle cx="514" cy="11" r="1.5"/><circle cx="528" cy="13" r="1.5"/>
+      </g>
+    </g>
+  </g>
+
+  <!-- ============================ RIGHT RAIL (DRONES + TOOLS) ============================ -->
+  <g>
+    <rect x="1080" y="40" width="320" height="740" fill="#0b0f17"/>
+    <line x1="1080" y1="40" x2="1080" y2="780" stroke="#1f2532"/>
+
+    <!-- header -->
+    <line x1="1080" y1="78" x2="1400" y2="78" stroke="#1f2532"/>
+    <text x="1096" y="65" fill="#9aa4b8" font-size="10.5" letter-spacing="0.08em">ACTIVE DRONES · 5</text>
+
+    <!-- drone card 1 (GF, working) -->
+    <g transform="translate(1096, 92)">
+      <rect width="288" height="92" rx="3" fill="#11151f" stroke="#1f2532"/>
+      <rect x="6" y="6" width="22" height="14" rx="2" fill="none" stroke="#3c6ef5"/>
+      <text x="17" y="16" text-anchor="middle" fill="#5e88ff" font-size="9" letter-spacing="0.04em">GF</text>
+      <text x="270" y="16" text-anchor="end" fill="#e26b43" font-size="10">✕</text>
+      <text x="6" y="36" fill="#e3e8f1" font-size="12">d7b0e1c4</text>
+      <text x="6" y="50" fill="#9aa4b8" font-size="10">claude-sonnet-4-6</text>
+      <text x="6" y="65" fill="#5e6b82" font-size="10">turn 3/12 · $0.041</text>
+      <text x="6" y="80" fill="#9aa4b8" font-size="10">now: <tspan fill="#5e88ff">cm_findings, decompose</tspan></text>
+    </g>
+
+    <!-- drone card 2 (worker, browser active) -->
+    <g transform="translate(1096, 196)">
+      <rect width="288" height="118" rx="3" fill="#11151f" stroke="#1f2532"/>
+      <rect x="0" y="0" width="2" height="118" fill="#3c6ef5"/>
+      <rect x="6" y="6" width="44" height="14" rx="2" fill="none" stroke="#3a8a7c"/>
+      <text x="28" y="16" text-anchor="middle" fill="#7fe5d0" font-size="9" letter-spacing="0.04em">WORK</text>
+      <text x="248" y="16" fill="#5e88ff" font-size="13">◐</text>
+      <text x="270" y="16" text-anchor="end" fill="#e26b43" font-size="10">✕</text>
+      <text x="6" y="36" fill="#e3e8f1" font-size="12">7a3c2e90</text>
+      <text x="6" y="50" fill="#9aa4b8" font-size="10">claude-haiku-4-5</text>
+      <text x="6" y="64" fill="#5e6b82" font-size="10">turn 5/8 · $0.018</text>
+      <text x="6" y="79" fill="#5e88ff" font-size="10">$ curl -s "https://api.sweetmar…</text>
+      <rect x="6" y="86" width="276" height="26" fill="#070a0f" stroke="#1f2532"/>
+      <text x="10" y="96" fill="#9aa4b8" font-size="9">  HTTP/1.1 200 OK</text>
+      <text x="10" y="106" fill="#9aa4b8" font-size="9">  47 lots returned</text>
+    </g>
+
+    <!-- drone card 3 (worker, awaiting human action — copper border) -->
+    <g transform="translate(1096, 326)">
+      <rect width="288" height="86" rx="3" fill="#11151f" stroke="#e26b43"/>
+      <rect x="6" y="6" width="44" height="14" rx="2" fill="none" stroke="#3a8a7c"/>
+      <text x="28" y="16" text-anchor="middle" fill="#7fe5d0" font-size="9" letter-spacing="0.04em">WORK</text>
+      <text x="248" y="16" fill="#e26b43" font-size="13">◐</text>
+      <text x="270" y="16" text-anchor="end" fill="#e26b43" font-size="10">✕</text>
+      <text x="6" y="36" fill="#e3e8f1" font-size="12">b8e29ad1</text>
+      <text x="6" y="50" fill="#9aa4b8" font-size="10">gpt-4o</text>
+      <text x="6" y="64" fill="#5e6b82" font-size="10">turn 2/8 · $0.008</text>
+      <text x="6" y="79" fill="#f5b53c" font-size="10">awaiting: OAuth approval (Shopify)</text>
+    </g>
+
+    <!-- drone card 4 (alignment) -->
+    <g transform="translate(1096, 424)">
+      <rect width="288" height="70" rx="3" fill="#11151f" stroke="#1f2532"/>
+      <rect x="6" y="6" width="44" height="14" rx="2" fill="none" stroke="#f5b53c"/>
+      <text x="28" y="16" text-anchor="middle" fill="#f5b53c" font-size="9" letter-spacing="0.04em">ALIGN</text>
+      <text x="270" y="16" text-anchor="end" fill="#e26b43" font-size="10">✕</text>
+      <text x="6" y="36" fill="#e3e8f1" font-size="12">9c1d4a02</text>
+      <text x="6" y="50" fill="#9aa4b8" font-size="10">claude-opus-4-7</text>
+      <text x="6" y="64" fill="#5e6b82" font-size="10">turn 1/12 · $0.062</text>
+    </g>
+
+    <!-- recent tools header -->
+    <line x1="1080" y1="510" x2="1400" y2="510" stroke="#1f2532"/>
+    <line x1="1080" y1="538" x2="1400" y2="538" stroke="#1f2532"/>
+    <text x="1096" y="528" fill="#9aa4b8" font-size="10.5" letter-spacing="0.08em">RECENT TOOLS</text>
+    <text x="1384" y="528" text-anchor="end" fill="#5e6b82" font-size="10.5">marketplace →</text>
+
+    <g transform="translate(1096, 548)">
+      <rect width="288" height="38" rx="3" fill="none" stroke="#1f2532"/>
+      <text x="8" y="16" fill="#e3e8f1" font-size="12">requests</text>
+      <rect x="232" y="6" width="50" height="14" rx="2" fill="none" stroke="#3a8a7c"/>
+      <text x="257" y="16" text-anchor="middle" fill="#7fe5d0" font-size="9" letter-spacing="0.04em">high</text>
+      <text x="8" y="30" fill="#5e6b82" font-size="10">http client used by 4 drones</text>
+    </g>
+
+    <g transform="translate(1096, 594)">
+      <rect width="288" height="38" rx="3" fill="none" stroke="#1f2532"/>
+      <text x="8" y="16" fill="#e3e8f1" font-size="12">stripe</text>
+      <rect x="232" y="6" width="50" height="14" rx="2" fill="none" stroke="#3c6ef5"/>
+      <text x="257" y="16" text-anchor="middle" fill="#5e88ff" font-size="9" letter-spacing="0.04em">std</text>
+      <text x="8" y="30" fill="#5e6b82" font-size="10">payments + invoicing</text>
+    </g>
+
+    <g transform="translate(1096, 640)">
+      <rect width="288" height="38" rx="3" fill="none" stroke="#1f2532"/>
+      <text x="8" y="16" fill="#e3e8f1" font-size="12">pandas</text>
+      <rect x="232" y="6" width="50" height="14" rx="2" fill="none" stroke="#3a8a7c"/>
+      <text x="257" y="16" text-anchor="middle" fill="#7fe5d0" font-size="9" letter-spacing="0.04em">high</text>
+      <text x="8" y="30" fill="#5e6b82" font-size="10">tabular wrangling for 06-parallel</text>
+    </g>
+
+    <g transform="translate(1096, 686)">
+      <rect width="288" height="38" rx="3" fill="none" stroke="#1f2532"/>
+      <text x="8" y="16" fill="#e3e8f1" font-size="12">playwright</text>
+      <rect x="232" y="6" width="50" height="14" rx="2" fill="none" stroke="#f5b53c"/>
+      <text x="257" y="16" text-anchor="middle" fill="#f5b53c" font-size="9" letter-spacing="0.04em">low</text>
+      <text x="8" y="30" fill="#5e6b82" font-size="10">browser, sandboxed</text>
+    </g>
+  </g>
+
+  <!-- ============================ BOTTOM EVENT DRAWER ============================ -->
+  <g>
+    <rect x="320" y="780" width="760" height="40" fill="#0b0f17"/>
+    <line x1="320" y1="780" x2="1080" y2="780" stroke="#1f2532"/>
+    <text x="336" y="805" fill="#9aa4b8" font-size="10.5" letter-spacing="0.08em">EVENT TAPE</text>
+    <text x="436" y="805" fill="#5e6b82" font-size="11">▸ 412 events · last: worker.fill 2s ago</text>
+  </g>
+
+  <!-- subtle bottom-left footer mark -->
+  <text x="16" y="810" fill="#3a4358" font-size="10" letter-spacing="0.08em">DRONE GRAPH · v0.4</text>
+</svg>
