@@ -39,7 +39,6 @@ from drone_graph.drones import (
     resolve_orchestrator_provider_model,
 )
 from drone_graph.gaps import FindingAuthor, Gap, GapStore
-from drone_graph.gaps.records import FindingKind
 from drone_graph.model_registry.registry import ModelRegistry
 from drone_graph.orchestrator.bootstrap import (
     PRESET_ALIGNMENT,
@@ -67,7 +66,7 @@ DEFAULT_TICK_S = 1.0
 DEFAULT_ALIGNMENT_EVERY = 3
 DEFAULT_MAX_GF = 15
 DEFAULT_WORKER_MAX_TURNS = 20
-DEFAULT_PRESET_MAX_TURNS = 6
+DEFAULT_PRESET_MAX_TURNS = 10
 DEFAULT_TARGET_LEAVES = 5
 HARDKILL_GRACE_S = 90.0       # 3.4 will use this for cancelled workers
 SOFTKILL_GRACE_S = 5.0
@@ -153,6 +152,7 @@ class Scheduler:
         cost_ceiling_usd: float | None = None,
         control: Any | None = None,
         tier_overrides: dict[str, dict[str, str]] | None = None,
+        workspace_dir: Path | None = None,
     ) -> None:
         self.substrate = substrate
         self.signals = signals
@@ -171,6 +171,11 @@ class Scheduler:
         self.signal_db = signal_db if signal_db is not None else default_db_path()
         self.tape_dir = Path("var") / "tapes" / run_id
         self.tape_dir.mkdir(parents=True, exist_ok=True)
+        self.workspace_dir = workspace_dir
+        # ``project_workspace`` is set during ``run()`` once the root gap
+        # exists — it points to ``workspace/<project-name>/`` and has sub-
+        # folders ``drone-graph-work/``, ``files/``, ``code/``, ``extras/``.
+        self.project_workspace: Path | None = None
         self.pending_events = list(scenario_events or [])
         self.cost_ceiling_usd = cost_ceiling_usd
         # When ``control`` is set, the mission-control API owns pause/resume,
@@ -202,6 +207,9 @@ class Scheduler:
 
     def run(self) -> None:
         self._emit("scheduler.start", run_id=self.run_id, max_workers=self.max_workers)
+        # Seed the project workspace folder tree using the root gap's intent
+        # (no-op if workspace_dir is None or roots don't exist yet).
+        self._init_project_workspace()
         # Self-healing tick loop. A single bad tick (Neo4j blip, race
         # condition, transient bug) must NOT kill the whole scheduler —
         # the operator would just see "active" forever with nothing
@@ -220,7 +228,7 @@ class Scheduler:
                 try:
                     self._tick()
                     consecutive_tick_errors = 0
-                except Exception as e:  # noqa: BLE001
+                except Exception as e:
                     consecutive_tick_errors += 1
                     err_repr = f"{type(e).__name__}: {e}"
                     self._emit(
@@ -263,6 +271,73 @@ class Scheduler:
             )
             sys.stderr.flush()
 
+    def _init_project_workspace(self) -> None:
+        """Create the project workspace folder tree.
+
+        Derives the project name from the root gap's intent (e.g.
+        ``build-a-coffee-storefront``), then creates four sub-folders under
+        ``workspace/<project-name>/``:
+
+        * ``drone-graph-work/`` — per-gap working notes (.md, .txt)
+        * ``files/`` — finished reports, CSVs, exports the operator will
+          look at later
+        * ``code/`` — code projects (frontend/, backend/, database/,
+          scripts/)
+        * ``extras/`` — rough work, miscellany
+
+        If there is no root gap yet this is a safe no-op; the first tick
+        that has roots will call ``_init_project_workspace`` again.
+        """
+        if self.workspace_dir is None:
+            self._emit("scheduler.workspace", reason="no_workspace_dir")
+            return
+        project_name = self._derive_project_name()
+        if project_name is None:
+            self.project_workspace = self.workspace_dir
+            self._emit(
+                "scheduler.workspace",
+                reason="no_root_yet",
+                fallback=str(self.workspace_dir),
+                project_workspace=str(self.project_workspace) if self.project_workspace else None,
+            )
+            return
+        base = self.workspace_dir / project_name
+        for sub in ("drone-graph-work", "files", "code", "extras"):
+            (base / sub).mkdir(parents=True, exist_ok=True)
+        self.project_workspace = base
+        self._emit(
+            "scheduler.workspace",
+            reason="created",
+            project_name=project_name,
+            path=str(base),
+        )
+
+    def _derive_project_name(self) -> str | None:
+        """Derive a session-unique project name from the root gap's intent.
+
+        Returns a filesystem-safe string like
+        ``build-a-coffee-storefront--20260519T112022Z-abc12345``.
+        The ``run_id`` suffix guarantees each session gets its own folder.
+        Returns ``None`` when there is no root gap yet.
+        """
+        roots = self.store.roots()
+        if not roots:
+            return None
+        intent = (roots[0].intent or "").strip()
+        if not intent:
+            return None
+        # Take first ~5 words, lowercase, join with hyphens
+        words = intent.lower().split()[:5]
+        name = "-".join(words)
+        # Append the run_id so every session gets a unique workspace folder
+        run_suffix = self.run_id
+        full_name = f"{name}--{run_suffix}"
+        # Sanitise for Windows — < > : " / \ | ? * are illegal in filenames
+        safe = full_name.translate(str.maketrans(dict.fromkeys('<>:"/\\|?*', "_")))
+        # Keep under 200 chars, strip trailing hyphens
+        safe = safe[:200].rstrip("-")
+        return safe or None
+
     # ---- Single tick ------------------------------------------------------
 
     def _tick(self) -> None:
@@ -272,6 +347,11 @@ class Scheduler:
         self._signal_cancellations()
         self._hard_kill_overdue()
         self._inject_pending_events()
+        # Re-check project workspace: in the web UI path the root gap may
+        # not exist when ``run()`` first calls ``_init_project_workspace()``,
+        # so we try again each tick until it succeeds.
+        if self.project_workspace is None or self.project_workspace == self.workspace_dir:
+            self._init_project_workspace()
         if self._is_externally_paused():
             return
         if not self._budget_blown():
@@ -377,7 +457,7 @@ class Scheduler:
         # yet via the heartbeat path).
         try:
             slots = self.signals.claims_by_kind("browser_slot")
-        except (AttributeError, Exception):  # noqa: BLE001
+        except (AttributeError, Exception):
             return
         if not slots:
             return
@@ -574,10 +654,15 @@ class Scheduler:
                 return
             self.tick += 1
             self.attempted_gap_ids.add(target.id)
+            max_turns = (
+                target.max_worker_turns
+                if target.max_worker_turns is not None
+                else self.worker_max_turns
+            )
             self.workers[target.id] = self._spawn(
                 gap=target,
                 role="worker",
-                max_turns=self.worker_max_turns,
+                max_turns=max_turns,
             )
 
     def _pick_next_worker_target(self) -> Gap | None:
@@ -655,6 +740,26 @@ class Scheduler:
             "--signal-db", str(Path(self.signal_db).resolve()),
             "--run-id", self.run_id,
         ]
+        if self.project_workspace is not None:
+            pw = str(Path(self.project_workspace).resolve())
+            cmd += ["--workspace-dir", pw]
+            self._emit(
+                "scheduler.spawn.workspace",
+                gap_id=gap.id,
+                role=role,
+                workspace_dir=pw,
+                source="project_workspace",
+            )
+        elif self.workspace_dir is not None:
+            wd = str(Path(self.workspace_dir).resolve())
+            cmd += ["--workspace-dir", wd]
+            self._emit(
+                "scheduler.spawn.workspace",
+                gap_id=gap.id,
+                role=role,
+                workspace_dir=wd,
+                source="workspace_dir",
+            )
         # Drones run as the operator — full env, real cwd. Permission
         # tier governs which tool calls block for approval at the
         # dispatcher level; the scheduler doesn't gate anything here.
@@ -664,7 +769,7 @@ class Scheduler:
             cmd,
             env=env,
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
+            stderr=None,
         )
         spawned_at = time.time()
         self._emit(
@@ -786,6 +891,11 @@ class Scheduler:
     def _emit(self, event: str, **fields: Any) -> None:
         if self.tape is not None:
             self.tape.emit(event, **fields)
+        # Mirror to stderr so the operator sees live activity.
+        msg = f"[scheduler] {event}"
+        if fields:
+            msg += " | " + " ".join(f"{k}={v}" for k, v in fields.items())
+        print(msg, file=sys.stderr, flush=True)
 
 
 # ---- Module entry point ---------------------------------------------------

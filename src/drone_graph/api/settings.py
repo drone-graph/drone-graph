@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 import stat
 from datetime import datetime
 from pathlib import Path
@@ -68,6 +69,19 @@ class Settings(BaseModel):
     # Tracks whether the operator has explicitly seen + answered the
     # permission step during onboarding.
     permission_tier_acknowledged: bool = False
+    # Absolute path to the directory where drones save all generated files.
+    # Defaults to a "workspace" folder in the project root. The frontend
+    # provides a folder picker during onboarding so the user can place
+    # output wherever they want (e.g. Desktop, Documents, a shared drive).
+    workspace_dir: str | None = None
+    # Tracks whether the operator has explicitly seen + answered the
+    # workspace step during onboarding.
+    workspace_dir_acknowledged: bool = False
+    # Absolute path to a Chrome user-data directory that carries an
+    # authenticated session (Google/Gmail/YouTube etc.). Set via the
+    # authenticated-browser setup API. **Never** exposed to AI — the
+    # authenticated-browser tool resolves it server-side.
+    authenticated_chrome_profile_path: str | None = None
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
@@ -148,6 +162,10 @@ class SettingsView(BaseModel):
         "ask_external"
     )
     permission_tier_acknowledged: bool = False
+    # Absolute path to the directory where drones save generated files.
+    # Empty string means the default "workspace" folder in the project root.
+    workspace_dir: str
+    workspace_dir_acknowledged: bool = False
     settings_path: str
     updated_at: datetime
 
@@ -172,6 +190,8 @@ def view(s: Settings) -> SettingsView:
         max_concurrent_browsers=s.max_concurrent_browsers,
         permission_tier=s.permission_tier,
         permission_tier_acknowledged=s.permission_tier_acknowledged,
+        workspace_dir=_effective_workspace_dir(s),
+        workspace_dir_acknowledged=s.workspace_dir_acknowledged,
         settings_path=str(settings_path()),
         updated_at=s.updated_at,
     )
@@ -184,6 +204,18 @@ def _hint(v: str | None) -> str | None:
     if len(v) <= 8:
         return "•" * len(v)
     return f"{v[:3]}…{v[-4:]}"
+
+
+def _effective_workspace_dir(s: Settings) -> str:
+    """Return the absolute workspace directory path.
+
+    Uses ``s.workspace_dir`` if set; otherwise falls back to a ``workspace``
+    folder in the project root so the operator doesn't have to configure
+    anything to get started.
+    """
+    if s.workspace_dir:
+        return str(Path(s.workspace_dir).resolve())
+    return str(Path("workspace").resolve())
 
 
 class SettingsPatch(BaseModel):
@@ -203,6 +235,9 @@ class SettingsPatch(BaseModel):
     max_concurrent_browsers: int | None = None
     permission_tier: Literal["open", "ask_external", "ask_everything"] | None = None
     permission_tier_acknowledged: bool | None = None
+    # Absolute path to the workspace directory. Empty string resets to default.
+    workspace_dir: str | None = None
+    workspace_dir_acknowledged: bool | None = None
 
 
 def merge_patch(s: Settings, p: SettingsPatch) -> Settings:
@@ -243,4 +278,8 @@ def merge_patch(s: Settings, p: SettingsPatch) -> Settings:
         new.permission_tier_acknowledged = True
     if p.permission_tier_acknowledged is not None:
         new.permission_tier_acknowledged = p.permission_tier_acknowledged
+    if p.workspace_dir is not None:
+        new.workspace_dir = p.workspace_dir.strip() or None
+    if p.workspace_dir_acknowledged is not None:
+        new.workspace_dir_acknowledged = p.workspace_dir_acknowledged
     return new

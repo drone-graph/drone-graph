@@ -180,6 +180,8 @@ export interface SettingsView {
   max_concurrent_browsers: number;
   permission_tier: "open" | "ask_external" | "ask_everything";
   permission_tier_acknowledged: boolean;
+  workspace_dir: string | null;
+  workspace_dir_acknowledged: boolean;
   settings_path: string;
   updated_at: string;
 }
@@ -197,6 +199,8 @@ export interface SettingsPatch {
   max_concurrent_browsers?: number | null;
   permission_tier?: "open" | "ask_external" | "ask_everything" | null;
   permission_tier_acknowledged?: boolean | null;
+  workspace_dir?: string | null;
+  workspace_dir_acknowledged?: boolean | null;
 }
 
 export type InboxActionType =
@@ -276,4 +280,19 @@ export interface ModelRegistry {
   /** Tier names in canonical order (nano → frontier). */
   tiers: string[];
   models: RegistryModel[];
+}
+
+// ---- Browser launcher ----------------------------------------------------
+
+export interface LaunchResponse {
+  success: boolean;
+  message: string;
+}
+
+// ---- Authenticated profile ------------------------------------------------
+
+export interface AuthenticatedConfig {
+  cdp_port: number;
+  authenticated_domains: string[];
+  chrome_path: string | null;
 }

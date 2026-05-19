@@ -26,6 +26,7 @@ Actions
 * ``register_profile`` — declare that this profile now holds a usable
   capability (e.g. logged-in LinkedIn). Future drones discover via
   ``cm_list_tools``.
+* ``evaluate`` — run arbitrary JavaScript on the page and return the result.
 * ``close`` — close this profile's window. Releases the browser slot.
 
 All actions are blocking. The slot is acquired on the first action of a
@@ -46,8 +47,10 @@ from drone_graph.tools.builtins.browser.concurrency import (
 )
 from drone_graph.tools.builtins.browser.notifications import notify
 from drone_graph.tools.builtins.browser.profiles import (
+    get_profile_services,
     profile_dir,
     registered_tool_name,
+    set_profile_services,
 )
 from drone_graph.tools.builtins.browser.session import manager_for_drone
 from drone_graph.tools.records import Tool, ToolKind
@@ -305,6 +308,26 @@ def _action_extract_text(args: dict[str, Any], ctx: DroneContext, profile: str) 
     return _result(True, text=text, url=page.url, title=page.title() or "")
 
 
+def _action_evaluate(args: dict[str, Any], ctx: DroneContext, profile: str) -> str:
+    """Run arbitrary JavaScript on the page and return the result. Use to
+    inspect elements, extract structured data, or drive custom interactions
+    that don't fit the standard action set."""
+    script = str(args.get("script", "")).strip()
+    if not script:
+        return _result(False, error="script required")
+    mgr = manager_for_drone(ctx.drone_id)
+    page = mgr.page(profile)
+    # page.evaluate returns a JSON-serialisable value automatically.
+    result = page.evaluate(script)
+    # Cap so a single huge DOM dump can't blow the context window.
+    if isinstance(result, str):
+        result = result[:12000]
+    elif isinstance(result, list):
+        result = result[:500]
+    _emit_state(ctx, profile, "evaluate")
+    return _result(True, result=result)
+
+
 def _action_register_profile(args: dict[str, Any], ctx: DroneContext, profile: str) -> str:
     """Advertise that this profile now has a usable capability — e.g. logged
     into LinkedIn, paired with a GitHub session. The tool is registered in
@@ -315,6 +338,19 @@ def _action_register_profile(args: dict[str, Any], ctx: DroneContext, profile: s
         or f"Headed Chromium browser session with profile {profile!r}. "
         "Use cm_browser(profile=...) to drive."
     )
+    # Capture service tags if the drone provided them, and persist to metadata.json.
+    services_raw = args.get("services")
+    if services_raw and isinstance(services_raw, list):
+        services = [str(s).strip() for s in services_raw if s and str(s).strip()]
+        if services:
+            set_profile_services(profile, services)
+    else:
+        services = get_profile_services(profile)
+    # Append service tags to the description so other drones see what this
+    # profile is good for.
+    if services:
+        svc = ", ".join(services)
+        description += f" [services: {svc}]"
     name = registered_tool_name(profile)
     try:
         rec = Tool(
@@ -338,6 +374,7 @@ def _action_register_profile(args: dict[str, Any], ctx: DroneContext, profile: s
             profile=profile,
             tool_name=name,
             summary=summary,
+            services=services,
         )
     return _result(True, tool_name=name)
 
@@ -464,6 +501,7 @@ _ACTIONS = {
     "navigate_back": _action_navigate_back,
     "wait_for": _action_wait_for,
     "extract_text": _action_extract_text,
+    "evaluate": _action_evaluate,
     "register_profile": _action_register_profile,
     "await_operator": _action_await_operator,
     "close": _action_close,
@@ -480,6 +518,7 @@ _ACTIONS = {
         "— if a previous drone logged in, you stay logged in. "
         "Actions: open_url, screenshot, click, type, press, fill_form, "
         "select_option, scroll, navigate_back, wait_for, extract_text, "
+        "evaluate, "
         "register_profile, await_operator, close. "
         "When stuck or facing a sign-in / OAuth / MFA challenge, call "
         "await_operator with a one-sentence `prompt` describing what you "
@@ -487,7 +526,9 @@ _ACTIONS = {
         "window or types a reply in the drone-attached chat panel, and "
         "this call returns their message. When you've established a "
         "working session that future drones should reuse, call "
-        "register_profile to advertise the capability."
+        "register_profile to advertise the capability. "
+        "Do NOT use for Google/Gmail/YouTube tasks — use "
+        "cm_authenticated_browser instead."
     ),
     {
         "type": "object",
@@ -562,6 +603,22 @@ _ACTIONS = {
                 "type": "string",
                 "description": "register_profile: optional longer description.",
             },
+            "services": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "register_profile: list of service names this profile "
+                    "has active sessions for, e.g. [\"google\", \"reddit\", \"x\"]. "
+                    "Persisted to the profile's metadata for later discovery."
+                ),
+            },
+            "script": {
+                "type": "string",
+                "description": (
+                    "evaluate: JavaScript expression or function body to run "
+                    "in the page context. Return value must be JSON-serialisable."
+                ),
+            },
         },
         "required": ["action", "profile"],
     },
@@ -569,6 +626,8 @@ _ACTIONS = {
 def cm_browser(args: dict[str, Any], ctx: DroneContext) -> ToolResult:
     action = str(args.get("action", "")).strip()
     profile = str(args.get("profile", "")).strip()
+    # Log every browser action with key params for debugging sign-in issues.
+    _log_browser_action(action, profile, args)
     if not action:
         return ToolResult(content=_result(False, error="action required"))
     if action not in _ACTIONS:
@@ -607,6 +666,29 @@ def cm_browser(args: dict[str, Any], ctx: DroneContext) -> ToolResult:
             )
         return ToolResult(content=_result(False, error=f"{type(e).__name__}: {e}"))
     return ToolResult(content=out)
+
+
+def _log_browser_action(action: str, profile: str, args: dict[str, Any]) -> None:
+    """Print a debug line to stderr showing the browser action and its key params."""
+    import sys
+    parts = [f"[cm_browser] action={action!r} profile={profile!r}"]
+    if action == "type":
+        sel = args.get("selector", "")
+        submit = args.get("submit", False)
+        parts.append(f"selector={sel!r} submit={submit!r}")
+    elif action == "click":
+        parts.append(f"selector={args.get('selector', '')!r}")
+    elif action == "press":
+        parts.append(f"key={args.get('key', '')!r} selector={args.get('selector', '')!r}")
+    elif action == "fill_form":
+        fields = args.get("fields", [])
+        submit_sel = args.get("submit_selector", "")
+        parts.append(f"fields={len(fields)} submit_selector={submit_sel!r}")
+    elif action == "await_operator":
+        parts.append(f"prompt={args.get('prompt', '')!r}")
+    elif action == "open_url":
+        parts.append(f"url={args.get('url', '')!r}")
+    print(*parts, file=sys.stderr, flush=True)
 
 
 # ---- Drone-exit cleanup hook --------------------------------------------

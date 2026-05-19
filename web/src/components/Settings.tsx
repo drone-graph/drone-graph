@@ -1,9 +1,10 @@
-import { For, Show, createMemo, createResource, createSignal } from "solid-js";
+import { For, Show, createMemo, createResource, createSignal, onMount } from "solid-js";
 
 import { api } from "../api";
 import { isSoundEnabled, setSoundEnabled } from "../sound";
 import { refreshSettings, setView, store } from "../state";
 import type { ModelRegistry } from "../types";
+import { BrowserProfiles } from "./BrowserProfiles";
 
 export function Settings() {
   const settings = () => store.settings;
@@ -25,9 +26,22 @@ export function Settings() {
   const [permissionTier, setPermissionTier] = createSignal<
     "open" | "ask_external" | "ask_everything"
   >(store.settings?.permission_tier ?? "ask_external");
+  const [workspaceDir, setWorkspaceDir] = createSignal(
+    store.settings?.workspace_dir ?? "",
+  );
   const [saving, setSaving] = createSignal(false);
   const [savedAt, setSavedAt] = createSignal<Date | null>(null);
   const [error, setError] = createSignal<string | null>(null);
+  const [authStatus, setAuthStatus] = createSignal<{has_profile: boolean; cdp_running: boolean} | null>(null);
+
+  const refreshAuthStatus = async () => {
+    try {
+      const result = await api.authenticatedProfileStatus();
+      setAuthStatus(result);
+    } catch {
+      /* ignore */
+    }
+  };
 
   const hasAnyKey = createMemo(
     () =>
@@ -99,6 +113,7 @@ export function Settings() {
           max_concurrent_browsers: Math.max(1, Number(maxBrowsers().trim())),
         }),
         permission_tier: permissionTier(),
+        workspace_dir: workspaceDir().trim() || null,
       });
       await refreshSettings();
       setAnthropicKey("");
@@ -133,6 +148,8 @@ export function Settings() {
     void api.updateSettings({ sound_enabled: next });
     void refreshSettings();
   }
+
+  onMount(() => { void refreshAuthStatus(); });
 
   return (
     <div class="settings">
@@ -299,6 +316,22 @@ export function Settings() {
           </Field>
         </Section>
 
+        <Section title="workspace">
+          <p class="dim" style={{ "line-height": "1.55", "font-size": "var(--fs-sm)" }}>
+            Drones create a subfolder per gap inside this directory. Leave
+            empty to use the default{" "}
+            <span class="mono">./workspace</span> next to the project.
+          </p>
+          <Field label="workspace directory">
+            <input
+              type="text"
+              placeholder="/home/you/drone-workspace"
+              value={workspaceDir()}
+              onInput={(e) => setWorkspaceDir(e.currentTarget.value)}
+            />
+          </Field>
+        </Section>
+
         <Section title="permissions">
           <Field label="permission tier">
             <select
@@ -331,6 +364,42 @@ export function Settings() {
           <button onClick={toggleSound}>
             {isSoundEnabled() ? "♪ disable" : "· enable"} atmospheric sound
           </button>
+        </Section>
+
+        <Section title="browser">
+          <p class="dim" style={{ "font-size": "var(--fs-sm)", "margin": "0 0 6px" }}>
+            Launch Chrome to manually sign into services. Uses the same anti-detection
+            measures as drones (real Chrome channel, stealth patches). Sessions are
+            persisted on disk for drone reuse.
+          </p>
+          <BrowserProfiles />
+        </Section>
+
+        <Section title="authenticated Google profile">
+          <Field label="profile path">
+            <Show when={authStatus()?.has_profile} fallback={<span class="faint">Not configured</span>}>
+              <span style={{color: "var(--green)"}}>Profile ready</span>
+            </Show>
+          </Field>
+          <Field label="status">
+            <Show when={authStatus()?.cdp_running} fallback={<span class="faint">Stopped</span>}>
+              <span style={{color: "var(--green)"}}>Running</span>
+            </Show>
+          </Field>
+          <div class="row" style={{gap: "8px", "margin-top": "8px"}}>
+            <button onClick={async () => {
+              await api.authenticatedProfileSetup();
+              await refreshAuthStatus();
+            }}>Launch Setup</button>
+            <button onClick={async () => {
+              await api.authenticatedProfileStart();
+              await refreshAuthStatus();
+            }}>Start Chrome</button>
+            <button onClick={async () => {
+              await api.authenticatedProfileStop();
+              await refreshAuthStatus();
+            }}>Stop Chrome</button>
+          </div>
         </Section>
 
         <div class="actions">

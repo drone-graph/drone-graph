@@ -23,6 +23,16 @@ decide which structural edits are warranted. Emit one or more edits in a \
 single turn — you may call decompose / create / retire / reopen / \
 rewrite_intent / noop multiple times to handle several signals at once.
 
+SKILL-AWARE INTENTS. When you create or decompose a gap whose work involves \
+creating an account on a known platform (Google, GitHub, Reddit, X/Twitter, \
+LinkedIn), include the skill name in the child's intent text so the worker \
+drone knows which skill to load. For example, instead of "Create a Google \
+account using the browser", write "Create a Google account using the \
+google-account-creation skill". The worker drone will see this in its intent \
+and know to scan_local, install, and cm_request_tool the matching skill. \
+This applies to any platform for which a skill package exists under \
+src/drone_graph/skill_packages/.
+
 Verbs you can use:
 - decompose: attach children to an unfilled gap whose intent is too broad for \
 one pass. Decomposition is additive — adding more children to an \
@@ -251,6 +261,7 @@ GAP_FINDING_LOADOUT = [
     "reopen",
     "rewrite_intent",
     "noop",
+    "cm_skill_registry",
 ]
 ALIGNMENT_LOADOUT = ["write_alignment_finding", "cm_deprecate_stale_tools"]
 

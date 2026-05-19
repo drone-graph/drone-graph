@@ -9,16 +9,16 @@ import {
 
 import { ActionBanner } from "./components/ActionBanner";
 import { ActiveDronesRail } from "./components/ActiveDronesRail";
+import { BrowserView } from "./components/BrowserView";
 import { ChatRail } from "./components/ChatRail";
 import { EventDrawer } from "./components/EventDrawer";
-import { FindingsGraph } from "./components/FindingsGraph";
 import { GapDetailOverlay } from "./components/GapDetail";
-import { Internals } from "./components/Internals";
 import { Marketplace } from "./components/Marketplace";
 import { OnboardingBudget } from "./components/OnboardingBudget";
 import { OnboardingKey } from "./components/OnboardingKey";
 import { OnboardingPermissions } from "./components/OnboardingPermissions";
 import { OnboardingSeed } from "./components/OnboardingSeed";
+import { OnboardingWorkspace } from "./components/OnboardingWorkspace";
 import { ParanoidModal } from "./components/ParanoidModal";
 import { PermissionPromptModal } from "./components/PermissionPromptModal";
 import { RestartBanner } from "./components/RestartBanner";
@@ -205,9 +205,8 @@ export function App() {
             <Show
               when={store.view === "console"}
               fallback={
-                store.view === "findings" ? <FindingsGraph />
-                : store.view === "marketplace" ? <Marketplace />
-                : store.view === "internals" ? <Internals />
+                store.view === "tools" ? <Marketplace />
+                : store.view === "browser" ? <BrowserView />
                 : <Settings />
               }
             >
@@ -216,21 +215,27 @@ export function App() {
           </div>
 
           {/* Onboarding overlays sit above the dashboard until done.
-              Sequenced: key → budget → permissions → seed.
-              Budget and permissions gates are *acknowledgement-driven* —
-              they don't care whether the substrate has gaps. If the
-              operator hasn't explicitly answered the budget / permissions
-              question yet, ask. (Earlier these required isEmpty() too;
-              that left the operator stranded on the dashboard whenever
-              a stray gap survived a wipe.)
-              Seed still gates on isEmpty() since seeding only makes
-              sense when there's no work yet. */}
+              Sequenced: key → workspace → budget → permissions → seed.
+              Workspace, budget and permissions gates are *acknowledgement-
+              driven* — they don't care whether the substrate has gaps. If
+              the operator hasn't explicitly answered the step yet, ask.
+              Seed still gates on isEmpty() since seeding only makes sense
+              when there's no work yet. */}
           <Show when={isUnconfigured()}>
             <OnboardingKey />
           </Show>
           <Show
             when={
               !isUnconfigured() &&
+              !store.settings?.workspace_dir_acknowledged
+            }
+          >
+            <OnboardingWorkspace />
+          </Show>
+          <Show
+            when={
+              !isUnconfigured() &&
+              store.settings?.workspace_dir_acknowledged &&
               !store.settings?.cost_ceiling_acknowledged
             }
           >
@@ -239,6 +244,7 @@ export function App() {
           <Show
             when={
               !isUnconfigured() &&
+              store.settings?.workspace_dir_acknowledged &&
               store.settings?.cost_ceiling_acknowledged &&
               !store.settings?.permission_tier_acknowledged
             }
@@ -248,6 +254,7 @@ export function App() {
           <Show
             when={
               !isUnconfigured() &&
+              store.settings?.workspace_dir_acknowledged &&
               store.settings?.cost_ceiling_acknowledged &&
               store.settings?.permission_tier_acknowledged &&
               isEmpty()

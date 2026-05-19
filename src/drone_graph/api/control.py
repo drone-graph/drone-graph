@@ -202,6 +202,7 @@ class SwarmController:
         model: str,
         event_bus: EventBus,
         tier_overrides: dict[str, dict[str, str]] | None = None,
+        workspace_dir: Path | None = None,
     ) -> None:
         self.substrate = substrate
         self.store = store
@@ -231,6 +232,7 @@ class SwarmController:
         self._pending_lock = threading.Lock()
 
         self._tier_overrides = dict(tier_overrides or {})
+        self._workspace_dir = workspace_dir
         self._scheduler: Any | None = None  # drone_graph.orchestrator.scheduler.Scheduler
         self._sched_thread: threading.Thread | None = None
         self._start_scheduler_thread()
@@ -260,6 +262,7 @@ class SwarmController:
             cost_ceiling_usd=None,
             control=self.control,
             tier_overrides=self._tier_overrides or None,
+            workspace_dir=self._workspace_dir,
         )
         self._scheduler = sched
 

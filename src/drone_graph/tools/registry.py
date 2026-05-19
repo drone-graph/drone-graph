@@ -68,6 +68,9 @@ class DroneContext:
     suggested_tool_names: set[str] = field(default_factory=set)
     """Tools the gap suggests but didn't preload — drone can pull these in
     via ``cm_request_tool``."""
+    workspace_dir: str | None = None
+    """Absolute path to the drone's workspace directory. The terminal starts
+    here, and the drone should save all generated files under this folder."""
 
 
 _REGISTRY: dict[str, BuiltinTool] = {}

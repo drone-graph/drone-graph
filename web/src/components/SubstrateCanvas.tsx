@@ -1,5 +1,8 @@
 import {
+  For,
+  Show,
   createEffect,
+  createMemo,
   createSignal,
   onCleanup,
   onMount,
@@ -14,8 +17,8 @@ import {
 
 import { ContextMenu } from "./ContextMenu";
 import { api } from "../api";
-import { focusDrone, selectGap, store } from "../state";
-import type { ActiveDrone, Finding, Gap } from "../types";
+import { focusDrone, selectFinding, selectGap, store } from "../state";
+import type { ActiveDrone, Finding, FindingAuthor, Gap } from "../types";
 
 // ---- Node / edge types -----------------------------------------------------
 
@@ -35,9 +38,19 @@ interface SimEdge {
   target: SimNode | string;
 }
 
+interface SatellitePos {
+  finding: Finding;
+  x: number;
+  y: number;
+  r: number;
+}
+
 // ---- Component -------------------------------------------------------------
 
 const HEARTBEAT_MS = 800;
+const MAX_SATELLITES_PER_GAP = 24;
+const SATELLITE_RING_PADDING = 22;
+const SATELLITE_RING_STRIDE = 16;
 
 export function SubstrateCanvas() {
   let canvasRef: HTMLCanvasElement | undefined;
@@ -56,10 +69,37 @@ export function SubstrateCanvas() {
   } | null>(null);
   const [recentFinding, setRecentFinding] = createSignal<Finding | null>(null);
 
+  // ---- Findings overlay state -------------------------------------------
+  const [hoverFindingId, setHoverFindingId] = createSignal<string | null>(null);
+  const [authorFilter, setAuthorFilter] = createSignal<FindingAuthor | "all">(
+    "all",
+  );
+  const [kindFilter, setKindFilter] = createSignal<string>("");
+  const filteredFindings = createMemo<Finding[]>(() => {
+    const a = authorFilter();
+    const k = kindFilter().trim().toLowerCase();
+    return store.recent_findings.filter((f) => {
+      if (a !== "all" && f.author !== a) return false;
+      if (k && !f.kind.toLowerCase().includes(k)) return false;
+      return true;
+    });
+  });
+  const allKinds = createMemo<string[]>(() => {
+    const set = new Set<string>();
+    for (const f of store.recent_findings) set.add(f.kind);
+    return [...set].sort();
+  });
+  const selectedFinding = createMemo<Finding | null>(() => {
+    const id = store.selected_finding_id;
+    if (!id) return null;
+    return store.recent_findings.find((f) => f.id === id) ?? null;
+  });
+
   // ---- Layout state held outside Solid reactivity ------------------------
 
   let nodes: SimNode[] = [];
   let edges: SimEdge[] = [];
+  let satellites: SatellitePos[] = [];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let sim: any = null;
 
@@ -186,6 +226,8 @@ export function SubstrateCanvas() {
 
     drawEdges(ctx);
     drawNodes(ctx, t);
+    computeSatellites();
+    drawSatellites(ctx);
     drawSediment(ctx, w, h);
     drawDrones(ctx, t);
 
@@ -194,25 +236,42 @@ export function SubstrateCanvas() {
   }
 
   function drawEdges(ctx: CanvasRenderingContext2D): void {
-    ctx.lineWidth = 0.6;
+    // Quadratic Bézier curves: gentle downward bow. The control point is
+    // pulled perpendicular to the edge by a fraction of the edge length,
+    // biased so preset → child edges drape naturally downward.
+    ctx.lineWidth = 0.9;
+    ctx.lineCap = "round";
     for (const e of edges) {
       const src = typeof e.source === "string" ? null : e.source;
       const tgt = typeof e.target === "string" ? null : e.target;
       if (!src || !tgt) continue;
       const a = pickAuthorAccent(tgt.gap.status);
+      const dx = tgt.x - src.x;
+      const dy = tgt.y - src.y;
+      const len = Math.hypot(dx, dy) || 1;
+      // Perpendicular offset, sign chosen so the curve bows toward +y (down)
+      // for the top-down preset tree. For sibling edges this still produces
+      // a consistent gentle arc.
+      const perpSign = dx >= 0 ? 1 : -1;
+      const bow = Math.min(40, len * 0.18);
+      const mx = (src.x + tgt.x) / 2 + (-dy / len) * bow * perpSign;
+      const my = (src.y + tgt.y) / 2 + (dx / len) * bow * perpSign;
       const grad = ctx.createLinearGradient(src.x, src.y, tgt.x, tgt.y);
-      grad.addColorStop(0, "rgba(60, 110, 245, 0.18)");
+      grad.addColorStop(0, "rgba(94, 136, 255, 0.12)");
       grad.addColorStop(1, a + "55");
       ctx.strokeStyle = grad;
       ctx.beginPath();
       ctx.moveTo(src.x, src.y);
-      ctx.lineTo(tgt.x, tgt.y);
+      ctx.quadraticCurveTo(mx, my, tgt.x, tgt.y);
       ctx.stroke();
     }
   }
 
   function drawNodes(ctx: CanvasRenderingContext2D, t: number): void {
     const beat = 0.5 + 0.5 * Math.sin((t / HEARTBEAT_MS) * Math.PI * 2);
+    // Slow ~3-second sine for the breathing aurora — independent of the
+    // heartbeat so the two don't lock visually.
+    const breath = 0.5 + 0.5 * Math.sin((t / 2800) * Math.PI * 2);
     const selected = store.selected_gap_id;
     const pulseGap = store.alignment_pulse_gap_id;
     const findingsByGap = new Map<string, number>();
@@ -228,51 +287,83 @@ export function SubstrateCanvas() {
       const findingCount = findingsByGap.get(g.id) ?? 0;
       const baseR = g.preset_kind ? 18 : 12 + Math.min(14, Math.log2(1 + findingCount) * 4);
       const isActive = activeGapIds.has(g.id);
-      const activityPulse = isActive ? 1 + 0.25 * beat : 1 + 0.04 * (beat - 0.5);
+      const activityPulse = isActive ? 1 + 0.18 * beat : 1 + 0.03 * (beat - 0.5);
       const r = baseR * activityPulse;
       const accent = pickAuthorAccent(g.status);
+      const auroraAccent = pickAuroraAccent(g.status);
 
-      // Outer glow.
-      const glowR = r * 3.2;
-      const glowGrad = ctx.createRadialGradient(n.x, n.y, r * 0.6, n.x, n.y, glowR);
-      glowGrad.addColorStop(0, accent + (isActive ? "80" : "40"));
-      glowGrad.addColorStop(1, "rgba(0,0,0,0)");
-      ctx.fillStyle = glowGrad;
+      // Breathing aurora — soft multi-stop halo with a slow alpha & radius
+      // modulation. Replaces the harsher single-stop glow with something
+      // that reads as a living atmosphere around the node.
+      const auroraBase = r * 2.6;
+      const auroraR = auroraBase + (isActive ? 12 : 6) * breath;
+      const auroraAlphaMid = isActive ? 0.32 : 0.14;
+      const auroraAlphaOuter = isActive ? 0.10 : 0.04;
+      const auroraGrad = ctx.createRadialGradient(
+        n.x,
+        n.y,
+        r * 0.55,
+        n.x,
+        n.y,
+        auroraR,
+      );
+      auroraGrad.addColorStop(0, hexWithAlpha(auroraAccent, auroraAlphaMid * (0.85 + 0.15 * breath)));
+      auroraGrad.addColorStop(0.45, hexWithAlpha(auroraAccent, auroraAlphaOuter));
+      auroraGrad.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = auroraGrad;
       ctx.beginPath();
-      ctx.arc(n.x, n.y, glowR, 0, Math.PI * 2);
+      ctx.arc(n.x, n.y, auroraR, 0, Math.PI * 2);
       ctx.fill();
 
-      // Core.
+      // Sonar rings — only for active drones. Three rings expanding outward
+      // on a 2.4-second cycle, phase-staggered, fading as they grow. Reads
+      // clearly across the canvas as "this gap is being worked".
+      if (isActive) {
+        for (let i = 0; i < 3; i++) {
+          const phase = ((t / 2400) + i / 3) % 1;
+          const ringR = r + phase * 56;
+          const ringAlpha = (1 - phase) * 0.35;
+          ctx.strokeStyle = hexWithAlpha(auroraAccent, ringAlpha);
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.arc(n.x, n.y, ringR, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+      }
+
+      // Core — softer gradient with a subtle inner highlight in the upper
+      // left and a dimmer rim. Less saturated than the prior version so the
+      // canvas feels jewel-toned rather than neon.
       const coreGrad = ctx.createRadialGradient(
-        n.x - r * 0.3,
-        n.y - r * 0.3,
-        r * 0.1,
+        n.x - r * 0.35,
+        n.y - r * 0.35,
+        r * 0.12,
         n.x,
         n.y,
         r,
       );
-      coreGrad.addColorStop(0, lighten(accent));
-      coreGrad.addColorStop(0.55, accent);
-      coreGrad.addColorStop(1, "rgba(0,0,0,0.6)");
+      coreGrad.addColorStop(0, softHighlight(accent));
+      coreGrad.addColorStop(0.5, accent);
+      coreGrad.addColorStop(1, darken(accent));
       ctx.fillStyle = coreGrad;
       ctx.beginPath();
       ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
       ctx.fill();
 
-      // Preset ring outline.
+      // Preset ring outline — thin, low-alpha so it reads as classification
+      // rather than a hard frame.
       if (g.preset_kind) {
-        ctx.strokeStyle = accent + "cc";
-        ctx.lineWidth = 1.2;
+        ctx.strokeStyle = hexWithAlpha(accent, 0.65);
+        ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.arc(n.x, n.y, r + 4, 0, Math.PI * 2);
         ctx.stroke();
-        ctx.fillStyle = "var(--fg-1)";
       }
 
-      // Alignment pulse.
+      // Alignment pulse — keeps the existing semantic; just softened.
       if (pulseGap === g.id) {
-        ctx.strokeStyle = "rgba(245, 181, 60, 0.85)";
-        ctx.lineWidth = 1.4;
+        ctx.strokeStyle = "rgba(245, 181, 60, 0.7)";
+        ctx.lineWidth = 1.2;
         ctx.beginPath();
         ctx.arc(n.x, n.y, r + 8 + beat * 6, 0, Math.PI * 2);
         ctx.stroke();
@@ -421,6 +512,90 @@ export function SubstrateCanvas() {
     }
   }
 
+  // ---- Findings overlay (satellites) -----------------------------------
+
+  function computeSatellites(): void {
+    const byGap = new Map<string, Finding[]>();
+    for (const f of filteredFindings()) {
+      const gid = f.affected_gap_ids[0];
+      if (!gid) continue;
+      const arr = byGap.get(gid) ?? [];
+      arr.push(f);
+      byGap.set(gid, arr);
+    }
+    const out: SatellitePos[] = [];
+    for (const n of nodes) {
+      const list = byGap.get(n.gap.id);
+      if (!list || list.length === 0) continue;
+      const recent = list.slice(-MAX_SATELLITES_PER_GAP);
+      const total = recent.length;
+      const perRing = 12;
+      const numRings = Math.ceil(total / perRing);
+      const baseR = n.gap.preset_kind ? 18 : 14;
+      let idx = 0;
+      for (let ringI = 0; ringI < numRings; ringI++) {
+        const inRing = Math.min(perRing, total - ringI * perRing);
+        const ringR = baseR + SATELLITE_RING_PADDING + ringI * SATELLITE_RING_STRIDE;
+        for (let i = 0; i < inRing; i++) {
+          const angle = (i / inRing) * Math.PI * 2 - Math.PI / 2;
+          out.push({
+            finding: recent[idx],
+            x: n.x + Math.cos(angle) * ringR,
+            y: n.y + Math.sin(angle) * ringR,
+            r: 5,
+          });
+          idx++;
+        }
+      }
+    }
+    satellites = out;
+  }
+
+  function drawSatellites(ctx: CanvasRenderingContext2D): void {
+    const selected = store.selected_finding_id;
+    const hovered = hoverFindingId();
+    for (const s of satellites) {
+      const color = authorColor(s.finding.author);
+      const isFocused = selected === s.finding.id || hovered === s.finding.id;
+      const r = s.r * (isFocused ? 1.7 : 1);
+      if (isFocused) {
+        ctx.fillStyle = color + "55";
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, r * 2.4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = color;
+      ctx.shadowColor = color;
+      ctx.shadowBlur = isFocused ? 12 : 6;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      const ring = kindRingColor(s.finding.kind);
+      if (ring) {
+        ctx.strokeStyle = ring;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, r + 1.6, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+  }
+
+  function findSatelliteAt(cx: number, cy: number): SatellitePos | null {
+    const [x, y] = clientToWorld(cx, cy);
+    let best: SatellitePos | null = null;
+    let bestD = 14;
+    for (const s of satellites) {
+      const d = Math.hypot(s.x - x, s.y - y);
+      if (d < bestD) {
+        bestD = d;
+        best = s;
+      }
+    }
+    return best;
+  }
+
   // ---- Mouse / input ----------------------------------------------------
 
   function clientToWorld(cx: number, cy: number): [number, number] {
@@ -448,9 +623,14 @@ export function SubstrateCanvas() {
   }
 
   function onMouseMove(e: MouseEvent): void {
-    const n = findNodeAt(e.clientX, e.clientY);
+    // Satellite hits beat gap hits — they sit closer to the cursor than
+    // the underlying gap node.
+    const sat = findSatelliteAt(e.clientX, e.clientY);
+    setHoverFindingId(sat?.finding.id ?? null);
+    const n = sat ? null : findNodeAt(e.clientX, e.clientY);
     setHoverGapId(n?.id ?? null);
-    canvasRef!.style.cursor = n ? "pointer" : panState.dragging ? "grabbing" : "grab";
+    canvasRef!.style.cursor =
+      sat || n ? "pointer" : panState.dragging ? "grabbing" : "grab";
     if (panState.dragging) {
       const tr = transform();
       setTransform({
@@ -474,6 +654,7 @@ export function SubstrateCanvas() {
     panState.startY = e.clientY;
     panState.lastX = e.clientX;
     panState.lastY = e.clientY;
+    if (findSatelliteAt(e.clientX, e.clientY)) return;
     const n = findNodeAt(e.clientX, e.clientY);
     if (n) return; // node click handled in onMouseUp
     panState.dragging = true;
@@ -500,9 +681,15 @@ export function SubstrateCanvas() {
       e.clientY >= rect.top &&
       e.clientY <= rect.bottom;
     if (!overCanvas) return;
+    const sat = findSatelliteAt(e.clientX, e.clientY);
+    if (sat) {
+      selectFinding(sat.finding.id);
+      return;
+    }
     const n = findNodeAt(e.clientX, e.clientY);
     if (n) {
       selectGap(n.id);
+      selectFinding(null);
     } else {
       const yIn = e.clientY - rect.top;
       if (yIn > rect.height - 28 && sedimentCount > 0) {
@@ -549,6 +736,7 @@ export function SubstrateCanvas() {
       void w; void h;
     } else if (e.key === "Escape") {
       selectGap(null);
+      selectFinding(null);
       setMenu(null);
     }
   }
@@ -619,12 +807,43 @@ export function SubstrateCanvas() {
             {store.active_drones.length} drones live
           </span>
         </div>
+        <div class="hud-row filters">
+          <select
+            value={authorFilter()}
+            onChange={(e) =>
+              setAuthorFilter(e.currentTarget.value as FindingAuthor | "all")
+            }
+          >
+            <option value="all">all authors</option>
+            <option value="gap_finding">gap_finding</option>
+            <option value="alignment">alignment</option>
+            <option value="worker">worker</option>
+            <option value="user">user</option>
+            <option value="system">system</option>
+          </select>
+          <select
+            value={kindFilter()}
+            onChange={(e) => setKindFilter(e.currentTarget.value)}
+          >
+            <option value="">all kinds</option>
+            <For each={allKinds()}>
+              {(k) => <option value={k}>{k}</option>}
+            </For>
+          </select>
+          <span class="faint count">
+            {filteredFindings().length} / {store.recent_findings.length}
+          </span>
+          <Legend />
+        </div>
         {recentFinding() && (
           <div class="finding-ticker">
             <FindingTicker f={recentFinding()!} />
           </div>
         )}
       </div>
+      <Show when={selectedFinding()}>
+        <FindingDetail finding={selectedFinding()!} />
+      </Show>
       {menu() && (
         <ContextMenu
           x={menu()!.x}
@@ -653,7 +872,124 @@ function FindingTicker(props: { f: Finding }) {
   );
 }
 
+function Legend() {
+  const items: { color: string; label: string }[] = [
+    { color: "#3c6ef5", label: "user" },
+    { color: "#b48cff", label: "GF" },
+    { color: "#f5b53c", label: "alignment" },
+    { color: "#7fe5d0", label: "worker" },
+    { color: "#687589", label: "system" },
+  ];
+  return (
+    <div class="legend">
+      <For each={items}>
+        {(i) => (
+          <span class="legend-item">
+            <span class="legend-dot" style={{ background: i.color }} />
+            <span class="faint">{i.label}</span>
+          </span>
+        )}
+      </For>
+    </div>
+  );
+}
+
+function FindingDetail(props: { finding: Finding }) {
+  return (
+    <div class="finding-detail">
+      <div class="fd-head">
+        <span class={`tag ${authorTag(props.finding.author)}`}>
+          {props.finding.author}
+        </span>
+        <span class="tag graphite">{props.finding.kind}</span>
+        <span class="dim mono" style={{ "font-size": "var(--fs-xs)" }}>
+          tick {props.finding.tick}
+        </span>
+        <span style={{ flex: "1" }} />
+        <button class="ghost" onClick={() => selectFinding(null)}>
+          close
+        </button>
+      </div>
+      <div class="fd-body">
+        <pre class="fd-summary">{props.finding.summary}</pre>
+        <Show when={props.finding.affected_gap_ids.length > 0}>
+          <div class="fd-section">
+            <div class="fd-label">AFFECTED GAPS</div>
+            <div class="row" style={{ "flex-wrap": "wrap", gap: "4px" }}>
+              <For each={props.finding.affected_gap_ids}>
+                {(gid) => (
+                  <a
+                    class="tag cobalt clickable"
+                    onClick={() => selectGap(gid)}
+                  >
+                    {gid.slice(0, 8)}
+                  </a>
+                )}
+              </For>
+            </div>
+          </div>
+        </Show>
+        <Show when={props.finding.artefact_paths.length > 0}>
+          <div class="fd-section">
+            <div class="fd-label">ARTEFACTS</div>
+            <For each={props.finding.artefact_paths}>
+              {(p) => (
+                <div class="fd-artefact mono" style={{ "font-size": "var(--fs-xs)" }}>
+                  {p}
+                </div>
+              )}
+            </For>
+          </div>
+        </Show>
+        <Show when={props.finding.invocation_tool_name}>
+          <div class="fd-section">
+            <div class="fd-label">INVOCATION</div>
+            <div style={{ "font-size": "var(--fs-xs)" }}>
+              tool <span class="mono">{props.finding.invocation_tool_name}</span>
+              {" · outcome "}
+              {props.finding.invocation_outcome ?? "—"}
+              <Show when={props.finding.invocation_cost_usd}>
+                {" · $"}
+                {props.finding.invocation_cost_usd!.toFixed(4)}
+              </Show>
+            </div>
+          </div>
+        </Show>
+      </div>
+    </div>
+  );
+}
+
 // ---- Helpers ---------------------------------------------------------------
+
+function authorColor(a: FindingAuthor): string {
+  return {
+    user: "#3c6ef5",
+    gap_finding: "#b48cff",
+    alignment: "#f5b53c",
+    worker: "#7fe5d0",
+    system: "#687589",
+  }[a];
+}
+
+function kindRingColor(kind: string): string | null {
+  if (
+    kind === "decompose" ||
+    kind === "create" ||
+    kind === "retire" ||
+    kind === "reopen" ||
+    kind === "rewrite_intent"
+  ) {
+    return "rgba(60, 110, 245, 0.45)";
+  }
+  if (kind === "fail" || kind === "requires_user_action") {
+    return "rgba(226, 107, 67, 0.55)";
+  }
+  if (kind === "fill") {
+    return "rgba(127, 229, 208, 0.55)";
+  }
+  return null;
+}
 
 function authorTag(a: Finding["author"]): string {
   return {
@@ -665,11 +1001,25 @@ function authorTag(a: Finding["author"]): string {
   }[a];
 }
 
+// Slightly muted jewel tones for the core gradient. Less neon than the prior
+// pure-saturated cobalt/teal; reads as polished material rather than glowing
+// pixels.
 function pickAuthorAccent(status: Gap["status"]): string {
   return {
-    unfilled: "#3c6ef5", // cobalt
-    filled: "#7fe5d0", // teal
-    retired: "#2a2f38", // graphite
+    unfilled: "#5b87e5", // softened cobalt
+    filled: "#9be0cf", // softened turquoise
+    retired: "#3a4358", // dim graphite
+  }[status];
+}
+
+// A separate, more chromatic accent used for the aurora and sonar rings —
+// gives the halo a hint of color shift versus the core so the node doesn't
+// flatten visually.
+function pickAuroraAccent(status: Gap["status"]): string {
+  return {
+    unfilled: "#7aa4ff", // light cobalt
+    filled: "#9be8d4", // bright turquoise
+    retired: "#586278", // graphite-blue
   }[status];
 }
 
@@ -679,8 +1029,40 @@ function droneColor(d: ActiveDrone): string {
   return "#6fd0a8";
 }
 
-function lighten(hex: string): string {
-  return hex + "ee";
+function softHighlight(hex: string): string {
+  const { r, g, b } = parseHex(hex);
+  // Lift toward white by 35% — a soft specular without bleaching.
+  const lr = Math.round(r + (255 - r) * 0.35);
+  const lg = Math.round(g + (255 - g) * 0.35);
+  const lb = Math.round(b + (255 - b) * 0.35);
+  return rgbToHex(lr, lg, lb);
+}
+
+function darken(hex: string): string {
+  const { r, g, b } = parseHex(hex);
+  // Pull toward near-black for the rim; keeps a hint of hue so the gradient
+  // doesn't dead-end on a flat grey.
+  return rgbToHex(
+    Math.round(r * 0.18),
+    Math.round(g * 0.18),
+    Math.round(b * 0.22),
+  );
+}
+
+function hexWithAlpha(hex: string, alpha: number): string {
+  const { r, g, b } = parseHex(hex);
+  return `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(3)})`;
+}
+
+function parseHex(hex: string): { r: number; g: number; b: number } {
+  const h = hex.startsWith("#") ? hex.slice(1) : hex;
+  const n = parseInt(h, 16);
+  return { r: (n >> 16) & 0xff, g: (n >> 8) & 0xff, b: n & 0xff };
+}
+
+function rgbToHex(r: number, g: number, b: number): string {
+  const c = (r << 16) | (g << 8) | b;
+  return "#" + c.toString(16).padStart(6, "0");
 }
 
 function truncate(s: string, n: number): string {
@@ -731,4 +1113,93 @@ const CSS = `
   text-overflow: ellipsis;
   pointer-events: auto;
 }
+
+/* Findings filter row. The HUD root is pointer-events: none for
+ * click-through; this row opts back in so the selects are usable. */
+.hud-row.filters {
+  pointer-events: auto;
+  align-items: center;
+  gap: 8px;
+  background: rgba(11, 15, 23, 0.7);
+  border: 1px solid var(--border);
+  padding: 4px 8px;
+  border-radius: 3px;
+  font-size: var(--fs-xs);
+  width: fit-content;
+}
+.hud-row.filters select {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  padding: 2px 4px;
+}
+.hud-row.filters .count { margin-left: 4px; }
+.legend {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-left: 4px;
+}
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.legend-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.finding-detail {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: min(420px, 40%);
+  background: var(--bg-1);
+  border-left: 1px solid var(--border-strong);
+  display: flex;
+  flex-direction: column;
+  z-index: 5;
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.5);
+}
+.fd-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-2);
+}
+.fd-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.fd-summary {
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  line-height: 1.55;
+  color: var(--fg-0);
+}
+.fd-section { display: flex; flex-direction: column; gap: 5px; }
+.fd-label {
+  font-size: var(--fs-xs);
+  letter-spacing: 0.08em;
+  color: var(--fg-2);
+}
+.fd-artefact {
+  word-break: break-all;
+  color: var(--fg-1);
+}
+.tag.clickable { cursor: pointer; }
+.tag.clickable:hover { background: var(--bg-3); }
 `;

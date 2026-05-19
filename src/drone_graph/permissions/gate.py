@@ -68,6 +68,8 @@ _EXTERNAL_TOOLS: frozenset[str] = frozenset({
     "cm_browser",
     "cm_install_package",
     "cm_register_tool",
+    "cm_authenticated_browser",
+    "cm_check_auth_profile",
 })
 
 

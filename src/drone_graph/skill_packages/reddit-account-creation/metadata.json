@@ -1,0 +1,9 @@
+{
+  "name": "reddit-account-creation",
+  "version": "1.0.0",
+  "description": "Create a new Reddit account using the headed browser.",
+  "tags": ["account-creation", "reddit", "browser", "signup"],
+  "author": "drone-graph",
+  "requires_browser": true,
+  "requires_email": true
+}

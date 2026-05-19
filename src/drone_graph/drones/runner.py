@@ -111,6 +111,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "--heartbeat-period", type=float, default=DEFAULT_HEARTBEAT_PERIOD_S,
         help="Heartbeat renewal period in seconds.",
     )
+    p.add_argument(
+        "--workspace-dir", type=Path, default=None,
+        help="Base workspace directory where drones create per-gap subfolders. "
+             "Default: ./workspace",
+    )
     return p
 
 
@@ -156,6 +161,7 @@ def main(argv: list[str] | None = None) -> int:
             claim_ttl_s=args.claim_ttl,
             heartbeat_period_s=args.heartbeat_period,
             run_id=args.run_id,
+            workspace_dir=str(args.workspace_dir) if args.workspace_dir else None,
         )
     finally:
         if signals is not None:

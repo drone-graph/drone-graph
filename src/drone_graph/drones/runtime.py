@@ -22,6 +22,7 @@ import os
 import threading
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
@@ -219,6 +220,7 @@ DEFAULT_EMERGENT_LOADOUT = [
     "cm_release_file",
     "cm_install_package",
     "cm_browser",
+    "cm_skill_registry",
 ]
 
 # Tools that imply this drone needs a real bash terminal.
@@ -298,8 +300,9 @@ def _now_iso() -> str:
 class _TerminalBox:
     """Holds the drone's current terminal, letting tool dispatchers swap it on death."""
 
-    def __init__(self) -> None:
-        self._terminal: Terminal = Terminal()
+    def __init__(self, cwd: str | None = None) -> None:
+        self._cwd = cwd
+        self._terminal: Terminal = Terminal(cwd=cwd)
 
     def get(self) -> Terminal:
         return self._terminal
@@ -309,7 +312,7 @@ class _TerminalBox:
             self._terminal.close()
         except Exception:  # noqa: BLE001 - best-effort cleanup of a dead shell
             pass
-        self._terminal = Terminal()
+        self._terminal = Terminal(cwd=self._cwd)
 
     def close(self) -> None:
         try:
@@ -360,6 +363,95 @@ def _build_initial_messages(
     parts.append(f"id: {gap.id}")
     if gap.preset_kind is not None:
         parts.append(f"preset_kind: {gap.preset_kind}")
+    # For emergent gaps, inject a mandatory skill-check block in the SAME
+    # message as the intent.  LLMs prioritise user-message content over
+    # system-prompt rules, so placing the instruction here makes it
+    # impossible for the model to "forget" it when it reads the intent.
+    if gap.preset_kind is None:
+        parts.append(
+            "\n--- MANDATORY SKILL CHECK (execute BEFORE any other action) ---\n"
+            "Before you do ANY work on this gap, you MUST check whether a "
+            "skill exists for your task.\n\n"
+            "Step 1 — Check \"Suggested tools\" above (populated by Gap Finding):\n"
+            "If a tool name is listed (e.g. google_account_creation), "
+            "call cm_request_tool(name=\"google_account_creation\") directly — "
+            "no scan or install needed. The skill is already registered.\n\n"
+            "Step 2 — Only if no \"Suggested tools\" match: fall back to "
+            "skill discovery:\n"
+            "  a. Call cm_skill_registry(action='scan_local') to list skills.\n"
+            "  b. If a skill's skill_id matches your task "
+            "(e.g. 'google-account-creation' for Google signup), install it:\n"
+            "     cm_skill_registry(action='install', "
+            "skill_package_path='<dir from scan>')\n"
+            "  c. Derive the tool name: replace non-alphanumeric chars with "
+            "underscores, lowercase. E.g. 'google-account-creation' becomes "
+            "tool name 'google_account_creation'.\n"
+            "  d. Call cm_request_tool(name=\"<tool_name>\") to pull the "
+            "skill into your active tool set.\n\n"
+            "Once the skill tool is loaded, follow its steps precisely. Do "
+            "NOT use general browser automation (fill_form, select_option, "
+            "click) on that platform — the skill exists because general "
+            "automation fails.\n"
+            "Only proceed with general tools if NO skill matches.\n"
+            "--- END SKILL CHECK ---"
+        )
+
+    # For the Gap Finding preset, inject a skill-aware decomposition check.
+    # GF must scan skills, embed matching skill names into child gap
+    # intents, AND set tool_suggestions so workers can skip discovery.
+    # GF must NOT try to install/use skills or do browser work itself
+    # (its job is structural decomposition, not execution).
+    if gap.preset_kind == "gap_finding":
+        parts.append(
+            "\n--- SKILL-AWARE DECOMPOSITION (check BEFORE decomposing) ---\n"
+            "BEFORE you create or decompose any gap, scan available skills:\n\n"
+            "1. Call cm_skill_registry(action='scan_local') to list available "
+            "skill packages. Each result has a 'skill_id' "
+            "(e.g. 'google-account-creation').\n\n"
+            "2. If any platform-specific work in the tree matches a skill, "
+            "do BOTH:\n"
+            "   a. Embed the skill name in the child gap's intent text.\n"
+            "   b. Set the child's \"tool_suggestions\" to the tool name "
+            "derived from the skill_id (replace non-alphanumeric chars "
+            "with underscores, lowercase).\n"
+            "      E.g. skill_id 'google-account-creation' → "
+            "tool_suggestions=['google_account_creation']\n\n"
+            "3. For complex multi-step gaps (e.g. account creation, "
+            "browser-heavy workflows), ALSO set the child's "
+            "\"max_worker_turns\" to 60 so the worker has room to install "
+            "skills, run browsers, and handle errors without hitting the "
+            "default 20-turn cap prematurely.\n\n"
+            "Example — right: decompose('children=[{\"intent\":\"Create a "
+            "Google account using the google_account_creation skill\", "
+            "\"criteria\":\"...\", "
+            "\"tool_suggestions\":[\"google_account_creation\"], "
+            "\"max_worker_turns\":60}]', "
+            "rationale=...)\n"
+            "Example — wrong: decompose('children=[{\"intent\":\"Create a "
+            "Google account\", \"criteria\":\"...\"}]', rationale=...) "
+            "(missing tool_suggestions, missing skill name in intent)\n\n"
+            "You MUST NOT install or use skills yourself. Your job is "
+            "structural decomposition — workers do the execution. Do NOT "
+            "use cm_browser yourself for platform-specific tasks; create "
+            "a child gap for that work instead.\n"
+            "--- END SKILL CHECK ---"
+        )
+    parts.append(
+        "\n--- SELF-DEBUGGING DIRECTIVE ---\n"
+        "If your work fails, stalls, or produces errors, DO NOT repeat the same "
+        "failing steps blindly. Instead:\n\n"
+        "1. Use terminal_run with a web-search command (e.g. curl, wget, or any "
+        "search tool you have) to research the specific error, updated selectors, "
+        "or changed page structures.\n"
+        "2. Inspect the full error output and any screenshots carefully.\n"
+        "3. Use cm_skill_registry(action='find_for_gap') or scan_local to see if "
+        "an existing skill covers the failing platform.\n"
+        "4. Adapt your approach based on what you learn, then retry.\n\n"
+        "You have access to web search, the skill registry, and all your tools. "
+        "Use them proactively to diagnose and fix issues without waiting for "
+        "operator help.\n"
+        "--- END SELF-DEBUGGING DIRECTIVE ---"
+    )
     parts.append(f"\nintent:\n{gap.intent}")
     parts.append(f"\ncriteria:\n{gap.criteria}\n")
     if gap.tool_suggestions:
@@ -400,6 +492,7 @@ def run_drone(
     claim_ttl_s: float = DEFAULT_CLAIM_TTL_S,
     heartbeat_period_s: float = DEFAULT_HEARTBEAT_PERIOD_S,
     run_id: str | None = None,
+    workspace_dir: str | None = None,
 ) -> DroneResult:
     """Dispatch one drone against ``gap_or_id`` and run until termination.
 
@@ -464,7 +557,27 @@ def run_drone(
     suggested = set(gap.tool_suggestions or [])
 
     needs_terminal = any(name in _TERMINAL_TOOLS for name in active)
-    terminal_box = _TerminalBox() if needs_terminal else None
+
+    # Create a dedicated workspace directory for this gap so all files the
+    # drone generates (CSVs, Excel files, websites, reports, etc.) land in
+    # a predictable location instead of polluting the project root.
+    # Sanitise gap ID for the filesystem — Windows reserves < > : " / \ | ? *
+    # and gap IDs like "preset:gap_finding" would otherwise crash with
+    # NotADirectoryError (WinError 267).
+    _safe_id = gap.id.translate(
+        str.maketrans({c: "_" for c in '<>:"/\\|?*'})
+    )
+    base = Path(workspace_dir) if workspace_dir else Path("workspace")
+    # Each gap gets a per-gap subfolder inside ``drone-graph-work/``.
+    # The project root (``workspace/<project-name>/``) is created by the
+    # scheduler; the drone only creates its own work subfolder.
+    gap_workspace = base / "drone-graph-work" / _safe_id
+    gap_workspace.mkdir(parents=True, exist_ok=True)
+    workspace_str = str(gap_workspace.resolve())
+
+    terminal_box = (
+        _TerminalBox(cwd=workspace_str) if needs_terminal else None
+    )
 
     ctx = DroneContext(
         gap_id=gap.id,
@@ -477,6 +590,7 @@ def run_drone(
         signals=signals,
         active_tool_names=active,
         suggested_tool_names=suggested,
+        workspace_dir=workspace_str,
     )
     state = _RuntimeState(ctx=ctx)
 
@@ -582,6 +696,7 @@ def run_drone(
                 break
             usage_total.tokens_in += resp.usage.tokens_in
             usage_total.tokens_out += resp.usage.tokens_out
+            usage_total.cache_read_input_tokens += resp.usage.cache_read_input_tokens
 
             # Runaway-output guard: a drone that emits ``tokens_out >=
             # max_tokens`` three turns in a row is almost certainly stuck

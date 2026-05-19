@@ -17,6 +17,8 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from playwright_stealth import Stealth
+
 from drone_graph.tools.builtins.browser.profiles import profile_dir
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -28,6 +30,25 @@ if TYPE_CHECKING:  # pragma: no cover
     )
 
 logger = logging.getLogger(__name__)
+
+# ── Realistic user-agent ─────────────────────────────────────────────
+# A recent Chrome-on-Windows user-agent string.  Google's sign-in flow
+# is known to scrutinise the ``User-Agent`` header; using Playwright's
+# default bundled-Chromium UA can trigger the *"This browser or app may
+# not be secure"* detection.
+_DEFAULT_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/130.0.0.0 Safari/537.36"
+)
+
+# ── Stealth ──────────────────────────────────────────────────────────
+# Singleton instance of the stealth plugin. Its ``apply_stealth_sync``
+# method injects a 43 KB JavaScript init-script that patches 19+
+# browser-fingerprint vectors (webdriver, plugins, languages, chrome.*,
+# permissions, WebGL, user-agent data, etc.) so that sign-in flows on
+# Google / LinkedIn / GitHub don't flag the automated browser.
+_stealth = Stealth()
 
 
 class BrowserSessionManager:
@@ -101,18 +122,34 @@ class BrowserSessionManager:
         assert self._pw is not None
         path = profile_dir(profile_name)
         headless = _headless_from_env()
-        # Window title hint so the operator can identify drone-owned
-        # windows in the OS window manager. Chromium picks this up from
-        # the page title, which we set explicitly after each navigation.
+
+        # ---- Launch via real system Chrome (not bundled Chromium) ----------
+        # Google's sign-in flow blocks Playwright's bundled Chromium with
+        # *"This browser or app may not be secure"*.  Using the **real**
+        # system Chrome (``channel="chrome"``) avoids that detection because
+        # the browser fingerprint matches a normal user installation.
+        #
+        # Additional anti-detection measures:
+        #   1. ``--disable-blink-features=AutomationControlled`` — hides
+        #      ``navigator.webdriver`` from JavaScript.
+        #   2. ``playwright-stealth`` init-script — patches 19+ fingerprint
+        #      vectors (applied below).
+        #   3. Realistic user-agent + viewport — so header / screen-size
+        #      fingerprints look natural.
         ctx = self._pw.chromium.launch_persistent_context(
             user_data_dir=str(path),
+            channel="chrome",   # use real system Chrome not bundled Chromium
             headless=headless,
-            no_viewport=True,  # let the OS size it naturally
+            no_viewport=True,   # let the OS size it naturally
+            user_agent=_DEFAULT_UA,
             args=[
-                # Identify the drone in window manager listings:
+                "--disable-blink-features=AutomationControlled",
                 f"--window-name=drone-graph:{self.drone_id[:8]}/{profile_name}",
             ],
         )
+        # Apply the full stealth suite (19+ evasion vectors) via Playwright's
+        # native add_init_script mechanism. This runs on every page load.
+        _stealth.apply_stealth_sync(ctx)
         self._contexts[profile_name] = ctx
         if ctx.pages:
             self._pages[profile_name] = ctx.pages[0]

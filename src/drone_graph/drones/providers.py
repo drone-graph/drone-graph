@@ -25,6 +25,7 @@ class ToolCall:
 class Usage:
     tokens_in: int = 0
     tokens_out: int = 0
+    cache_read_input_tokens: int = 0
 
 
 @dataclass
@@ -119,24 +120,48 @@ def _retryable_chat(
 # ``src/drone_graph/model_registry/model_registry.json``. Drift between the
 # two caused a 3× over-count of Opus turns in the past (we had Opus listed at
 # $15/$75 when the actual Anthropic rate for the 4.5+ generation is $5/$25).
-_PRICING_FALLBACK: dict[tuple[Provider, str], tuple[float, float]] = {
-    (Provider.anthropic, "claude-sonnet-4-6"): (3.0, 15.0),
-    (Provider.anthropic, "claude-opus-4-7"): (5.0, 25.0),
-    (Provider.anthropic, "claude-opus-4-6"): (5.0, 25.0),
-    (Provider.anthropic, "claude-haiku-4-5-20251001"): (1.0, 5.0),
-    (Provider.openai, "gpt-4o"): (2.5, 10.0),
-    (Provider.openai, "gpt-4o-mini"): (0.15, 0.6),
+#
+# Each entry is a 3-tuple (in_rate, out_rate, cache_read_in_rate) in USD per
+# 1M tokens. ``None`` for cache_read_in_rate means the model does not support
+# prompt caching or the rate is unknown.
+_PRICE_FALLBACK: dict[tuple[Provider, str], tuple[float, float, float | None]] = {
+    # Anthropic — Sonnet 4 family  (in, out, cache_in)
+    (Provider.anthropic, "claude-sonnet-4-6"): (3.0, 15.0, 0.30),
+    (Provider.anthropic, "claude-sonnet-4-6-20241218"): (3.0, 15.0, 0.30),
+    (Provider.anthropic, "claude-sonnet-4-5-20250929"): (3.0, 15.0, 0.30),
+    (Provider.anthropic, "claude-sonnet-4"): (3.0, 15.0, 0.30),
+    # Anthropic — Opus 4 family
+    (Provider.anthropic, "claude-opus-4-7"): (5.0, 25.0, 0.50),
+    (Provider.anthropic, "claude-opus-4-6"): (5.0, 25.0, 0.50),
+    (Provider.anthropic, "claude-opus-4-5"): (5.0, 25.0, 0.50),
+    (Provider.anthropic, "claude-opus-4-1"): (15.0, 75.0, 1.50),
+    (Provider.anthropic, "claude-opus-4"): (5.0, 25.0, 0.50),
+    # Anthropic — Haiku 4.5 family
+    (Provider.anthropic, "claude-haiku-4-5-20251001"): (1.0, 5.0, 0.10),
+    (Provider.anthropic, "claude-haiku-4-5"): (1.0, 5.0, 0.10),
+    (Provider.anthropic, "claude-sonnet-4-20241022"): (3.0, 15.0, 0.30),
+    # OpenAI — GPT-4o family
+    (Provider.openai, "gpt-4o"): (2.5, 10.0, 0.625),
+    (Provider.openai, "gpt-4o-mini"): (0.15, 0.6, 0.0375),
+    (Provider.openai, "gpt-4.1"): (2.0, 8.0, 0.50),
+    (Provider.openai, "gpt-4.1-mini"): (0.40, 1.60, 0.10),
+    (Provider.openai, "gpt-4.1-nano"): (0.10, 0.40, 0.025),
+    # OpenAI — GPT-5.4 family (tier-default models)
+    (Provider.openai, "gpt-5.4-nano"): (0.20, 1.25, 0.02),
+    (Provider.openai, "gpt-5.4-mini"): (0.75, 4.50, 0.075),
+    (Provider.openai, "gpt-5.4"): (2.50, 15.00, 0.25),
+    (Provider.openai, "gpt-5.4-pro"): (30.0, 180.0, None),
 }
 
 
 # Cache the registry across calls — loading the JSON for every drone turn
 # would be wasteful. ``None`` means "not yet attempted"; an explicit empty
 # dict means "registry unavailable, use the fallback table forever."
-_REGISTRY_PRICE_CACHE: dict[tuple[Provider, str], tuple[float, float]] | None = None
+_REGISTRY_PRICE_CACHE: dict[tuple[Provider, str], tuple[float, float, float | None]] | None = None
 
 
-def _load_pricing() -> dict[tuple[Provider, str], tuple[float, float]]:
-    """Build a ``(provider, vendor_model_id) → (in_rate, out_rate)`` table
+def _load_pricing() -> dict[tuple[Provider, str], tuple[float, float, float | None]]:
+    """Build a ``(provider, vendor_model_id) → (in_rate, out_rate, cache_in_rate)`` table
     from the packaged model registry. Costs are in USD per 1M tokens. The
     registry is authoritative; this is just an indexed mirror so cost
     lookups are O(1)."""
@@ -149,11 +174,12 @@ def _load_pricing() -> dict[tuple[Provider, str], tuple[float, float]]:
         from drone_graph.model_registry.registry import ModelRegistry
 
         reg = ModelRegistry.load_auto()
-        out: dict[tuple[Provider, str], tuple[float, float]] = {}
+        out: dict[tuple[Provider, str], tuple[float, float, float | None]] = {}
         for entry in reg._data.models:  # noqa: SLF001 — single internal read
             out[(entry.provider, entry.vendor_model_id)] = (
                 entry.input_price_per_million_usd,
                 entry.output_price_per_million_usd,
+                entry.cache_input_price_per_million_usd,
             )
         _REGISTRY_PRICE_CACHE = out
     except Exception:
@@ -166,17 +192,22 @@ def cost_usd(provider: Provider, model: str, usage: Usage) -> float:
     (authoritative) with a small hardcoded fallback for the case where the
     registry can't be loaded.
 
-    Note: this does not yet model Anthropic's cache-read discount ($0.30/M
-    for cached input tokens on Sonnet). The Anthropic API returns
-    ``cache_read_input_tokens`` separately in ``usage``; until we wire that
-    through the ``Usage`` dataclass, the meter slightly *over*-estimates
-    real cost. That's the right way to be wrong (operator sees a safe
-    upper bound)."""
+    Applies the cache-read discount when ``usage.cache_read_input_tokens`` is
+    non-zero and the model has a known cache-in rate. The discount is the
+    difference between the full input rate and the cache rate, applied only
+    to the tokens that were actually served from cache.
+    """
     rates = _load_pricing().get((provider, model))
     if rates is None:
-        rates = _PRICING_FALLBACK.get((provider, model), (0.0, 0.0))
-    in_rate, out_rate = rates
-    return (usage.tokens_in * in_rate + usage.tokens_out * out_rate) / 1_000_000
+        rates = _PRICE_FALLBACK.get((provider, model), (0.0, 0.0, None))
+    in_rate, out_rate, cache_in_rate = rates
+    cost = (usage.tokens_in * in_rate + usage.tokens_out * out_rate) / 1_000_000
+    if cache_in_rate is not None and usage.cache_read_input_tokens:
+        # Cache-read tokens are billed at ``cache_in_rate`` rather than the
+        # full ``in_rate``. Subtract the over-count.
+        discount = (usage.cache_read_input_tokens * (in_rate - cache_in_rate)) / 1_000_000
+        cost -= discount
+    return cost
 
 
 def _annotate_last_message_for_cache(
@@ -279,6 +310,7 @@ class AnthropicClient:
             usage=Usage(
                 tokens_in=resp.usage.input_tokens,
                 tokens_out=resp.usage.output_tokens,
+                cache_read_input_tokens=getattr(resp.usage, "cache_read_input_tokens", 0),
             ),
             raw_assistant_content=raw_content,
         )
