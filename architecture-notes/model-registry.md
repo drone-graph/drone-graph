@@ -27,7 +27,7 @@ A **preset or worker drone** may later search vendor docs / APIs for new models 
 
 ## Registry file shape
 
-The packaged bootstrap file is `src/drone_graph/model_registry/model_registry.json`: **`models` is `[]`** and **`tier_defaults` is `{}`** until you populate it.
+The packaged bootstrap file is `src/drone_graph/model_registry/model_registry.json`: **`models` is `[]`** and **`tier_defaults_by_provider` is `{}`** until you populate it.
 
 - **`ModelRegistry.load_default()`** reads the packaged file.
 - **`ModelRegistry.load_auto()`** uses **`DRONE_GRAPH_MODEL_REGISTRY_PATH`** when set; otherwise the packaged default.
@@ -67,13 +67,13 @@ uv run drone-graph model-registry sync
 | **`DRONE_GRAPH_VENDOR_DOC_CACHE`** | Optional root dir for cached vendor doc plaintext (see `vendor_doc_cache.py`). |
 | **`DRONE_GRAPH_VENDOR_DOC_CACHE_MAX_AGE_HOURS`** | Optional cache TTL for HTTP refetch of cached docs. |
 
-**Caveats:** Enrichment is **non-deterministic**; review pricing and `tier_defaults` before production. OpenAI **`capabilities`** heuristics in `generate.py` are approximate; Anthropic rows derive tags from the SDK capability object when present. **`tier_defaults`** remain heuristic picks after filtering.
+**Caveats:** Enrichment is **non-deterministic**; review pricing and `tier_defaults_by_provider` before production. OpenAI **`capabilities`** heuristics in `generate.py` are approximate; Anthropic rows derive tags from the SDK capability object when present. **`tier_defaults_by_provider`** entries remain heuristic picks after filtering.
 
 ## Top-level JSON shape
 
 | Field | Type | Description |
 |--------|------|-------------|
-| **`tier_defaults`** | object | **Bootstrap:** must be `{}` when **`models`** is `[]`. **Populated:** must map each **`ModelTier`** (`cheap`, `standard`, `frontier`) to a **`dgraph_model_id`** that exists in `models` and must not be deprecated. |
+| **`tier_defaults_by_provider`** | object | **Bootstrap:** must be `{}` when **`models`** is `[]`. **Populated:** per-provider map (`Provider` → `ModelTier` → `dgraph_model_id`). Each provider's ladder must cover all five tiers (`nano`, `mini`, `standard`, `advanced`, `frontier`) or be omitted entirely; at least one provider must have a complete ladder. Every referenced model must exist in `models` and not be deprecated. |
 | **`models`** | array | List of **model registry entries** (see below). Empty until you generate or author a registry. |
 
 ## Model registry entry (schema)
@@ -85,7 +85,7 @@ All **prices are USD per 1 million tokens** unless noted.
 | **`dgraph_model_id`** | string | yes | Stable internal id (must be unique across `models`). |
 | **`provider`** | string | yes | `anthropic` or `openai` (matches `Provider` in code). |
 | **`vendor_model_id`** | string | yes | Exact API model id passed to the SDK. |
-| **`deprecated`** | boolean | yes | `false` = eligible for routing; `true` = kept for history but must not appear in `tier_defaults` or new runs; enrichment may **drop** the row when the doc overlay marks deprecated. |
+| **`deprecated`** | boolean | yes | `false` = eligible for routing; `true` = kept for history but must not appear in `tier_defaults_by_provider` or new runs; enrichment may **drop** the row when the doc overlay marks deprecated. |
 | **`max_input_tokens`** | integer | yes | Policy ceiling for input context. |
 | **`max_output_tokens`** | integer | yes | Policy ceiling for completion tokens. |
 | **`reasoning_effort`** | array of strings or null | yes | Nullable list (e.g. OpenAI API reasoning levels; Anthropic effort levels from API/docs). |
@@ -108,7 +108,7 @@ Both may be `null` if unknown.
 
 1. If **`models`** is empty, resolution fails with a clear error until a populated registry is configured (`model-registry fresh`, **`DRONE_GRAPH_MODEL_REGISTRY_PATH`**, or replace the packaged file after merge).
 2. Read **`gap.model_tier`**.
-3. Look up **`tier_defaults[tier]`** → **`dgraph_model_id`**.
+3. Look up **`tier_defaults_by_provider[provider][tier]`** → **`dgraph_model_id`**, falling back to another provider with a complete ladder if the preferred provider has none.
 4. Load that entry from **`models`**; reject if missing.
 5. Reject if **`deprecated`** is `true` (misconfiguration).
 6. Use **`vendor_model_id`** + **`provider`** for the API client; clamp or cap with **`max_*`** as the runtime implements.
@@ -117,7 +117,7 @@ Optional later: **`dgraph_model_id` override on `Gap`**, multi-model routing, or
 
 ## Related types and modules
 
-- **`ModelTier`** — `gaps/records.py` (`cheap`, `standard`, `frontier`).
+- **`ModelTier`** — `gaps/records.py` (`nano`, `mini`, `standard`, `advanced`, `frontier`).
 - **`Provider`** — `drones/providers.py` (`anthropic`, `openai`).
 - **Implementation** — `src/drone_graph/model_registry/` (`records.py`, `registry.py`, `generate.py`, `doc_enrich.py`, `vendor_doc_cache.py`, `anthropic_models_list_dump.py`).
 - **Phase‑1 doc tools** — `src/drone_graph/skills_marketplace/tool/` (`openai_docs_crawl.py`, `crawl4ai_page_tool.py`); imported by `doc_enrich` for OpenAI developer docs crawls.
