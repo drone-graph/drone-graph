@@ -201,6 +201,14 @@ Deeper, in order of how much detail you want:
 7. [`architecture-notes/Phase4-implementation.md`](architecture-notes/Phase4-implementation.md) — Tool nodes, trust tiers, soft-deprecation
 8. [`architecture-notes/model-registry.md`](architecture-notes/model-registry.md) — registry JSON and tier resolution
 
+## Contributing
+
+External contributions are welcome — fork, branch, PR against `main`. For
+anything beyond a typo or one-line fix, open an issue first so we can
+align on intent before you spend time on a patch. See
+[`CONTRIBUTING.md`](CONTRIBUTING.md) for setup, conventions, and what's
+out of scope.
+
 ## License
 
 MIT — see [`LICENSE`](LICENSE).
