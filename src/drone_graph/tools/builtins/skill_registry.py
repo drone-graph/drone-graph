@@ -383,11 +383,11 @@ def _action_list_installed(args: dict[str, Any], ctx: DroneContext) -> ToolResul
         ":Tool nodes discoverable by all drones. "
         "Use link_gap to record which skills were used for which tasks so future "
         "gaps inherit suggestions. "
-        "ACCOUNT-CREATION SKILLS AVAILABLE: google-account-creation, "
-        "github-account-creation, reddit-account-creation, x-account-creation, "
-        "linkedin-account-creation. If your gap involves creating an account on "
-        "one of these platforms, scan_local, install the matching skill, then "
-        "cm_request_tool to load it."
+        "ACCOUNT CREATION AND LOGIN are human-only operations. If your gap "
+        "requires signing into a platform (Google, GitHub, Reddit, X/Twitter, "
+        "LinkedIn), use cm_chat to ask the operator to sign in manually "
+        "through the browser. Do NOT attempt to automate login or account "
+        "creation."
     ),
     {
         "type": "object",

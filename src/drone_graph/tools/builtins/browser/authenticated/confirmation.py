@@ -4,6 +4,9 @@ Before ANY action in the authenticated Chrome profile, the drone must pause
 and get explicit operator approval via the existing SignalStore permissions
 mechanism. This uses a dedicated ``category="authenticated_browser"`` so the
 UI can distinguish these prompts from regular permission prompts.
+
+When the operator's permission tier is ``"open"`` the gate auto-approves
+without blocking.
 """
 
 from __future__ import annotations
@@ -70,6 +73,16 @@ def require_confirmation(
         # No signals sidecar — assume approved (safe for headless / unit tests).
         return ConfirmationDecision(approved=True)
 
+    # Respect the operator's permission tier.  When tier is "open" the
+    # authenticated browser gate auto-approves without prompting.
+    # NOTE: lazy import to avoid circular dependency:
+    #   confirmation -> api.settings -> api.app -> ... -> tools -> confirmation
+    from drone_graph.api.settings import load_settings  # fmt: skip
+
+    settings = load_settings()
+    if settings.permission_tier == "open":
+        return ConfirmationDecision(approved=True)
+
     request_id = uuid.uuid4().hex
 
     summary_parts = [f"[authenticated_browser] {description}"]
@@ -84,7 +97,7 @@ def require_confirmation(
         drone_id=drone_id,
         gap_id=gap_id,
         tier="ask_external",
-        tool_name="cm_authenticated_browser",
+        tool_name="cm_browser",
         category="authenticated_browser",
         summary=summary,
     )

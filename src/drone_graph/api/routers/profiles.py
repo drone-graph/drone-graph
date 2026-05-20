@@ -6,9 +6,7 @@ operator can sign into services interactively without leaving the web UI.
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
-from typing import Any
 
 from fastapi import APIRouter
 from pydantic import BaseModel
@@ -43,11 +41,6 @@ class ProfileDTO(BaseModel):
 class ProfileListResponse(BaseModel):
     profiles: list[ProfileDTO]
     profiles_root: str
-
-
-class LaunchResponse(BaseModel):
-    success: bool
-    message: str
 
 
 class RegisterRequest(BaseModel):
@@ -118,177 +111,6 @@ def list_all_profiles() -> ProfileListResponse:
     )
 
 
-@router.post("/launch", response_model=LaunchResponse)
-def launch_profile(profile_name: str) -> LaunchResponse:
-    """Launch headed Chromium (Playwright's bundled) with the given profile so
-    the operator can sign in to services interactively."""
-    p = profile_dir(profile_name)
-    if not p.exists():
-        return LaunchResponse(
-            success=False,
-            message=f"Profile directory does not exist: {p}",
-        )
-    try:
-        _spawn_browser_worker(profile_name, p)
-        return LaunchResponse(
-            success=True,
-            message=(
-                f"Launched Chromium with profile '{profile_name}'. "
-                "Sign in to your services, then close the window."
-            ),
-        )
-    except Exception as e:
-        return LaunchResponse(
-            success=False,
-            message=f"Failed to launch browser: {e}",
-        )
-
-
-# ---- Playwright background worker -------------------------------------------
-
-
-def _spawn_browser_worker(name: str, user_data_dir: Path) -> None:
-    """Start headed Playwright Chromium on a daemon thread."""
-    from threading import Thread
-
-    Thread(
-        target=_run_browser_session,
-        args=(name, user_data_dir),
-        daemon=True,
-    ).start()
-
-
-def _run_browser_session(name: str, user_data_dir: Path) -> None:
-    """Run a headed (headless=False) Chrome session using the **user's real
-    system Chrome** via Playwright's ``channel="chrome"``.
-
-    Google's sign-in flow blocks Playwright's bundled Chromium with *"This
-    browser or app may not be secure"*.  Using the real system Chrome
-    (which the user's own Google account is likely already signed into)
-    avoids that detection.
-
-    Two anti-automation measures are applied:
-    1. ``--disable-blink-features=AutomationControlled`` — prevents Chrome
-       from exposing ``navigator.webdriver`` to JavaScript.
-    2. ``playwright-stealth`` — patches 19+ browser-fingerprint vectors
-       (webdriver, plugins, languages, chrome.*, WebGL, etc.) as a second
-       line of defence.
-
-    The session blocks until the operator closes all pages, then persists
-    cookies / local storage back to disk for later drone usage.
-    """
-    import logging
-
-    _log = logging.getLogger(__name__)
-    print(
-        f"[profiles._run_browser_session] Starting browser session for profile={name!r} dir={user_data_dir}",
-        file=sys.stderr,
-        flush=True,
-    )
-
-    from playwright.sync_api import sync_playwright
-    from playwright_stealth import Stealth
-
-    _stealth = Stealth()
-    try:
-        with sync_playwright() as pw:
-            print(
-                "[profiles._run_browser_session] Playwright started, launching system Chrome (channel='chrome')...",
-                file=sys.stderr,
-                flush=True,
-            )
-
-            # ---- Launch the user's real system Chrome ------------------------
-            # channel="chrome" tells Playwright to find and launch the user's
-            # actual Chrome installation (via Windows registry/known paths)
-            # instead of its bundled Chromium.  This makes the browser look
-            # completely natural to Google's sign-in flow.
-            # --disable-blink-features=AutomationControlled removes Playwright's
-            # automation flag that would otherwise set navigator.webdriver=true.
-            ctx = pw.chromium.launch_persistent_context(
-                user_data_dir=str(user_data_dir),
-                channel="chrome",
-                headless=False,
-                no_viewport=True,
-                args=[
-                    f"--window-name=drone-graph:provisioning/{name}",
-                    "--disable-blink-features=AutomationControlled",
-                ],
-            )
-            print(
-                f"[profiles._run_browser_session] Context launched, pages={len(ctx.pages)}",
-                file=sys.stderr,
-                flush=True,
-            )
-
-            # Apply stealth as a second line of defence.
-            _stealth.apply_stealth_sync(ctx)
-            print(
-                "[profiles._run_browser_session] Stealth applied",
-                file=sys.stderr,
-                flush=True,
-            )
-
-            # Ensure at least one page is visible.
-            if not ctx.pages:
-                print(
-                    "[profiles._run_browser_session] No pages, creating new page",
-                    file=sys.stderr,
-                    flush=True,
-                )
-                ctx.new_page()
-            else:
-                _bring_to_front(ctx.pages[0])
-
-            print(
-                "[profiles._run_browser_session] Browser window should now be visible. Polling for close...",
-                file=sys.stderr,
-                flush=True,
-            )
-
-            # Poll until the user closes all pages.
-            import time
-
-            while _has_open_pages(ctx):
-                time.sleep(2)
-
-            print(
-                "[profiles._run_browser_session] All pages closed, cleaning up",
-                file=sys.stderr,
-                flush=True,
-            )
-            ctx.close()
-            print(
-                "[profiles._run_browser_session] Session ended cleanly",
-                file=sys.stderr,
-                flush=True,
-            )
-    except Exception as exc:
-        print(
-            f"[profiles._run_browser_session] ERROR: {type(exc).__name__}: {exc}",
-            file=sys.stderr,
-            flush=True,
-        )
-        _log.exception("Browser session crashed for profile %s", name)
-
-
-def _has_open_pages(ctx: "Any") -> bool:  # noqa: ANN401 — avoid playwright import at module level
-    """Return True if at least one non-closed page remains."""
-    try:
-        pages = ctx.pages
-        if not pages:
-            return False
-        return any(not p.is_closed() for p in pages)
-    except Exception:
-        return False
-
-
-def _bring_to_front(page: "Any") -> None:  # noqa: ANN401
-    """Best-effort: raise the browser window to the foreground."""
-    try:
-        page.bring_to_front()
-    except Exception:
-        pass
 
 
 @router.post("/register", response_model=RegisterResponse)
@@ -359,7 +181,15 @@ class AuthSetupResponse(BaseModel):
 
 class AuthStatusResponse(BaseModel):
     has_profile: bool
-    is_running: bool
+    cdp_running: bool
+
+
+class ChromeProfileInfo(BaseModel):
+    """A discovered Chrome profile on the local system."""
+
+    name: str
+    path: str
+    is_default: bool = False
 
 
 class AuthConfigDTO(BaseModel):
@@ -374,9 +204,73 @@ class AuthConfigUpdate(BaseModel):
     chrome_path: str | None = None
 
 
+def _discover_chrome_profiles() -> list[ChromeProfileInfo]:
+    """Scan the local system for available Chrome user-data profiles.
+
+    Returns a list of ``ChromeProfileInfo`` entries with the profile display
+    name (from ``Preferences``) and absolute path.
+    """
+    import json
+    import os
+    import platform
+
+    # Determine the Chrome User Data root directory per OS.
+    system = platform.system()
+    if system == "Windows":
+        root = Path(os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\User Data"))
+    elif system == "Darwin":
+        root = Path.home() / "Library/Application Support/Google/Chrome"
+    elif system == "Linux":
+        root = Path.home() / ".config/google-chrome"
+    else:
+        return []
+
+    if not root.is_dir():
+        return []
+
+    results: list[ChromeProfileInfo] = []
+    for child in sorted(root.iterdir()):
+        if not child.is_dir():
+            continue
+        # Profile dirs are either "Default" or "Profile N"
+        if child.name != "Default" and not child.name.startswith("Profile "):
+            continue
+        # Read the display name from Preferences JSON.
+        prefs_path = child / "Preferences"
+        display_name = child.name
+        if prefs_path.is_file():
+            try:
+                prefs = json.loads(prefs_path.read_text(encoding="utf-8"))
+                name = prefs.get("profile", {}).get("name", "")
+                if name:
+                    display_name = name
+            except Exception:
+                pass
+        results.append(
+            ChromeProfileInfo(
+                name=display_name,
+                path=str(child),
+                is_default=(child.name == "Default"),
+            )
+        )
+    return results
+
+
+@router.get("/authenticated/available", response_model=list[ChromeProfileInfo])
+def available_chrome_profiles() -> list[ChromeProfileInfo]:
+    """List Chrome profiles found on the local system.
+
+    Scans the Chrome User Data directory for profile folders (Default,
+    Profile 1, …) and reads their display names from the ``Preferences``
+    file. Returns an empty list if Chrome is not installed or no profiles
+    exist.
+    """
+    return _discover_chrome_profiles()
+
+
 @router.post("/authenticated/setup")
 def setup_authenticated_profile(req: AuthSetupRequest) -> AuthSetupResponse:
-    """Set the authenticated Chrome profile path. The path should point to a
+    """Set the Chrome profile directory. The path should point to a
     Chrome user-data directory (created by signing into Chrome with a Google
     account). Saves the path to Settings — never exposed to AI."""
     p = Path(req.profile_path).expanduser().resolve()
@@ -385,23 +279,23 @@ def setup_authenticated_profile(req: AuthSetupRequest) -> AuthSetupResponse:
     from drone_graph.api.settings import load_settings, save_settings
 
     s = load_settings()
-    s.authenticated_chrome_profile_path = str(p)
+    s.chrome_profile_dir = str(p)
     save_settings(s)
     return AuthSetupResponse(success=True, message=f"Profile set to {p}")
 
 
 @router.get("/authenticated/status", response_model=AuthStatusResponse)
 def authenticated_status() -> AuthStatusResponse:
-    """Check if an authenticated Chrome profile is configured and whether
+    """Check if a Chrome profile is configured and whether
     the Chrome process is currently running."""
     from drone_graph.api.settings import load_settings
 
     s = load_settings()
-    has_profile = bool(s.authenticated_chrome_profile_path) and Path(
-        s.authenticated_chrome_profile_path
+    has_profile = bool(s.chrome_profile_dir) and Path(
+        s.chrome_profile_dir
     ).is_dir()
     if not has_profile:
-        return AuthStatusResponse(has_profile=False, is_running=False)
+        return AuthStatusResponse(has_profile=False, cdp_running=False)
     try:
         from drone_graph.tools.builtins.browser.authenticated.chrome_launcher import (
             AuthenticatedChrome,
@@ -410,12 +304,12 @@ def authenticated_status() -> AuthStatusResponse:
         running = AuthenticatedChrome.is_running()
     except Exception:
         running = False
-    return AuthStatusResponse(has_profile=True, is_running=running)
+    return AuthStatusResponse(has_profile=True, cdp_running=running)
 
 
 @router.post("/authenticated/start")
 def start_authenticated_browser() -> AuthSetupResponse:
-    """Launch the authenticated Chrome instance."""
+    """Launch the Chrome instance with the configured profile."""
     from drone_graph.api.settings import load_settings
     from drone_graph.tools.builtins.browser.authenticated.chrome_launcher import (
         AuthenticatedChrome,
@@ -423,16 +317,16 @@ def start_authenticated_browser() -> AuthSetupResponse:
     from drone_graph.tools.builtins.browser.authenticated.config import load_config
 
     s = load_settings()
-    if not s.authenticated_chrome_profile_path:
+    if not s.chrome_profile_dir:
         return AuthSetupResponse(
-            success=False, message="No authenticated profile configured"
+            success=False, message="No Chrome profile configured"
         )
     cfg = load_config()
     try:
-        AuthenticatedChrome.ensure_running(cfg, s.authenticated_chrome_profile_path)
+        AuthenticatedChrome.ensure_running(cfg, s.chrome_profile_dir)
         return AuthSetupResponse(
             success=True,
-            message=f"Authenticated Chrome started on port {cfg.cdp_port}",
+            message=f"Chrome started on port {cfg.cdp_port}",
         )
     except Exception as exc:
         return AuthSetupResponse(success=False, message=str(exc))
@@ -440,14 +334,90 @@ def start_authenticated_browser() -> AuthSetupResponse:
 
 @router.post("/authenticated/stop")
 def stop_authenticated_browser() -> AuthSetupResponse:
-    """Stop the authenticated Chrome instance."""
+    """Stop the Chrome instance."""
     from drone_graph.tools.builtins.browser.authenticated.chrome_launcher import (
         AuthenticatedChrome,
     )
 
     try:
         AuthenticatedChrome.stop()
-        return AuthSetupResponse(success=True, message="Authenticated Chrome stopped")
+        return AuthSetupResponse(success=True, message="Chrome stopped")
+    except Exception as exc:
+        return AuthSetupResponse(success=False, message=str(exc))
+
+
+@router.post("/authenticated/launch-browser")
+def launch_authenticated_browser() -> AuthSetupResponse:
+    """Launch Chrome as a CDP-enabled browser for manual sign-in.
+
+    Uses the configured profile path from settings. The user can sign in to
+    Google, accept cookies, etc. — the session will then be available to
+    the CDP-managed Chrome on subsequent drone runs.
+    """
+    import subprocess
+    import sys
+
+    from drone_graph.api.settings import load_settings
+    from drone_graph.tools.builtins.browser.authenticated.chrome_launcher import (
+        _detect_chrome,
+        _write_pid_file,
+    )
+    from drone_graph.tools.builtins.browser.authenticated.config import load_config
+
+    s = load_settings()
+    if not s.chrome_profile_dir:
+        return AuthSetupResponse(
+            success=False, message="No Chrome profile configured"
+        )
+
+    profile_dir = Path(s.chrome_profile_dir).resolve()
+    if not profile_dir.is_dir():
+        return AuthSetupResponse(
+            success=False, message=f"Profile directory not found: {profile_dir}"
+        )
+
+    chrome_path = _detect_chrome()
+    if chrome_path is None:
+        return AuthSetupResponse(
+            success=False,
+            message="Could not find Chrome executable on this system",
+        )
+
+    config = load_config()
+
+    parent = profile_dir.parent
+    profile_name = profile_dir.name
+    # If the path IS the User Data root itself, use "Default" as the profile.
+    if profile_name.lower() in ("user data", "chrome", "google-chrome"):
+        profile_name = "Default"
+
+    args = [
+        chrome_path,
+        f"--user-data-dir={parent}",
+        f"--profile-directory={profile_name}",
+        f"--remote-debugging-port={config.cdp_port}",
+        "--disable-running-process-check",
+        "--no-first-run",
+        "--no-default-browser-check",
+    ]
+
+    print(
+        f"[profiles] Launching browser with CDP: {' '.join(args)}",
+        file=sys.stderr,
+        flush=True,
+    )
+
+    try:
+        proc = subprocess.Popen(
+            args,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        _write_pid_file(proc.pid)
+        return AuthSetupResponse(
+            success=True,
+            message=f"Chrome launched with CDP on port {config.cdp_port}, profile {profile_name}",
+        )
     except Exception as exc:
         return AuthSetupResponse(success=False, message=str(exc))
 

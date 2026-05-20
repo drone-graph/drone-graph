@@ -94,6 +94,14 @@ def _pick_worker_target(store: GapStore, already_attempted: set[str]) -> Gap | N
     return None
 
 
+def _check_ceiling(total_cost: float, ceiling: float | None, log, role: str = "system") -> bool:
+    """Return ``True`` and emit a log entry when the cost ceiling is hit."""
+    if ceiling is not None and total_cost >= ceiling:
+        log(role, "budget_exceeded", f"Cost ${total_cost:.2f} exceeds ceiling ${ceiling:.2f}", total_cost)
+        return True
+    return False
+
+
 def run_combined_loop(
     *,
     substrate: Substrate,
@@ -145,6 +153,13 @@ def run_combined_loop(
 
     if tape is None and out_dir is not None:
         tape = EventTape(out_dir / "tape.jsonl")
+
+    # Load cost ceiling from settings (swallow errors — ceiling is optional).
+    try:
+        from drone_graph.api.settings import load_settings
+        _ceiling: float | None = load_settings().default_cost_ceiling_usd
+    except Exception:
+        _ceiling = None
 
     timeline: list[dict[str, Any]] = []
     total_cost = 0.0
@@ -249,6 +264,9 @@ def run_combined_loop(
                 )
                 dt = time.time() - t0
                 total_cost += alignment_result.cost_usd
+                if _check_ceiling(total_cost, _ceiling, log):
+                    stop_reason = f"cost ceiling ${_ceiling:.2f} exceeded (alignment)"
+                    break
 
                 if alignment_result.outcome == "error":
                     err = alignment_result.error or "unknown"
@@ -315,6 +333,9 @@ def run_combined_loop(
             )
             dt = time.time() - t0
             total_cost += gf_result.cost_usd
+            if _check_ceiling(total_cost, _ceiling, log):
+                stop_reason = f"cost ceiling ${_ceiling:.2f} exceeded (gap_finding)"
+                break
 
             if gf_result.outcome == "error":
                 err = gf_result.error or "unknown"
@@ -445,6 +466,9 @@ def run_combined_loop(
                         break
                     dt = time.time() - t0
                     total_cost += w.cost_usd
+                    if _check_ceiling(total_cost, _ceiling, log):
+                        stop_reason = f"cost ceiling ${_ceiling:.2f} exceeded (worker)"
+                        break
                     worker_outcomes[w.outcome] = worker_outcomes.get(w.outcome, 0) + 1
                     summary = f"{w.outcome} on {target.id[:8]}: {target.intent[:60]}"
                     log("worker", w.outcome, summary, w.cost_usd)
@@ -497,6 +521,10 @@ def run_combined_loop(
             )
             dt = time.time() - t0
             total_cost += final_result.cost_usd
+            if _check_ceiling(total_cost, _ceiling, log):
+                stop_reason = f"cost ceiling ${_ceiling:.2f} exceeded (final alignment)"
+                # Final alignment is outside the main while loop, so we just
+                # stop processing further and let the artifact writer run.
             if final_result.outcome != "error":
                 final_findings = [
                     f

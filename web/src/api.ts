@@ -2,11 +2,11 @@
 // Returns parsed JSON; throws on non-2xx.
 
 import type {
+  ChromeProfileInfo,
   Finding,
   Gap,
   InboxItem,
   InboxResolveRequest,
-  LaunchResponse,
   ModelRegistry,
   PendingInstall,
   PermissionPrompt,
@@ -196,15 +196,13 @@ export const api = {
       `/api/drones/${encodeURIComponent(gap_id)}/screenshot`,
     ),
 
-  // ---- Browser launcher ---------------------------------------------------
-  profileLaunch: (profile_name: string) =>
-    http<LaunchResponse>(`/api/profiles/launch?profile_name=${encodeURIComponent(profile_name)}`, {
-      method: "POST",
-    }),
-
   // ---- Authenticated profile ----------------------------------------------
-  authenticatedProfileSetup: () =>
-    http<{message: string; cdp_port: number}>("/api/profiles/authenticated/setup", {method: "POST"}),
+  authenticatedProfileSetup: (profile_path: string) =>
+    http<{message: string; cdp_port: number}>("/api/profiles/authenticated/setup", {
+      method: "POST",
+      body: JSON.stringify({profile_path}),
+      headers: {"Content-Type": "application/json"},
+    }),
   authenticatedProfileStatus: () =>
     http<{has_profile: boolean; cdp_running: boolean}>("/api/profiles/authenticated/status"),
   authenticatedProfileStart: () =>
@@ -219,6 +217,10 @@ export const api = {
       body: JSON.stringify(cfg),
       headers: {"Content-Type": "application/json"},
     }),
+  authenticatedProfileAvailable: () =>
+    http<ChromeProfileInfo[]>("/api/profiles/authenticated/available"),
+  authenticatedProfileLaunchBrowser: () =>
+    http<{message: string}>("/api/profiles/authenticated/launch-browser", {method: "POST"}),
 };
 
 export interface AuthenticatedConfig {

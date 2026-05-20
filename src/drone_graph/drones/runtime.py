@@ -363,36 +363,25 @@ def _build_initial_messages(
     parts.append(f"id: {gap.id}")
     if gap.preset_kind is not None:
         parts.append(f"preset_kind: {gap.preset_kind}")
+    # The browser is authenticated with the operator's signed-in Google
+    # account.  Inject this in the user message (not the system prompt) so
+    # all drones — emergent, GF, Alignment — see it.
+    parts.append(
+        "\nThe browser is authenticated with the operator's Google account — "
+        "first check if you are already signed in (look for avatar/user menu on the homepage). "
+        "If already signed in, proceed directly. If not, use \"Sign in with Google\" when a platform offers it.\n"
+    )
     # For emergent gaps, inject a mandatory skill-check block in the SAME
     # message as the intent.  LLMs prioritise user-message content over
     # system-prompt rules, so placing the instruction here makes it
     # impossible for the model to "forget" it when it reads the intent.
     if gap.preset_kind is None:
         parts.append(
-            "\n--- MANDATORY SKILL CHECK (execute BEFORE any other action) ---\n"
-            "Before you do ANY work on this gap, you MUST check whether a "
-            "skill exists for your task.\n\n"
-            "Step 1 — Check \"Suggested tools\" above (populated by Gap Finding):\n"
-            "If a tool name is listed (e.g. google_account_creation), "
-            "call cm_request_tool(name=\"google_account_creation\") directly — "
-            "no scan or install needed. The skill is already registered.\n\n"
-            "Step 2 — Only if no \"Suggested tools\" match: fall back to "
-            "skill discovery:\n"
-            "  a. Call cm_skill_registry(action='scan_local') to list skills.\n"
-            "  b. If a skill's skill_id matches your task "
-            "(e.g. 'google-account-creation' for Google signup), install it:\n"
-            "     cm_skill_registry(action='install', "
-            "skill_package_path='<dir from scan>')\n"
-            "  c. Derive the tool name: replace non-alphanumeric chars with "
-            "underscores, lowercase. E.g. 'google-account-creation' becomes "
-            "tool name 'google_account_creation'.\n"
-            "  d. Call cm_request_tool(name=\"<tool_name>\") to pull the "
-            "skill into your active tool set.\n\n"
-            "Once the skill tool is loaded, follow its steps precisely. Do "
-            "NOT use general browser automation (fill_form, select_option, "
-            "click) on that platform — the skill exists because general "
-            "automation fails.\n"
-            "Only proceed with general tools if NO skill matches.\n"
+            "\n--- SKILL CHECK ---\n"
+            "Check suggested_tools first. If one matches: cm_request_tool(name).\n"
+            "Otherwise: scan_local -> install matching -> derive tool_name "
+            "(non-alphanum->underscore, lowercase) -> cm_request_tool(name).\n"
+            "Follow skill steps precisely — general automation fails on skilled platforms.\n"
             "--- END SKILL CHECK ---"
         )
 
@@ -403,54 +392,21 @@ def _build_initial_messages(
     # (its job is structural decomposition, not execution).
     if gap.preset_kind == "gap_finding":
         parts.append(
-            "\n--- SKILL-AWARE DECOMPOSITION (check BEFORE decomposing) ---\n"
-            "BEFORE you create or decompose any gap, scan available skills:\n\n"
-            "1. Call cm_skill_registry(action='scan_local') to list available "
-            "skill packages. Each result has a 'skill_id' "
-            "(e.g. 'google-account-creation').\n\n"
-            "2. If any platform-specific work in the tree matches a skill, "
-            "do BOTH:\n"
-            "   a. Embed the skill name in the child gap's intent text.\n"
-            "   b. Set the child's \"tool_suggestions\" to the tool name "
-            "derived from the skill_id (replace non-alphanumeric chars "
-            "with underscores, lowercase).\n"
-            "      E.g. skill_id 'google-account-creation' → "
-            "tool_suggestions=['google_account_creation']\n\n"
-            "3. For complex multi-step gaps (e.g. account creation, "
-            "browser-heavy workflows), ALSO set the child's "
-            "\"max_worker_turns\" to 60 so the worker has room to install "
-            "skills, run browsers, and handle errors without hitting the "
-            "default 20-turn cap prematurely.\n\n"
-            "Example — right: decompose('children=[{\"intent\":\"Create a "
-            "Google account using the google_account_creation skill\", "
-            "\"criteria\":\"...\", "
-            "\"tool_suggestions\":[\"google_account_creation\"], "
-            "\"max_worker_turns\":60}]', "
-            "rationale=...)\n"
-            "Example — wrong: decompose('children=[{\"intent\":\"Create a "
-            "Google account\", \"criteria\":\"...\"}]', rationale=...) "
-            "(missing tool_suggestions, missing skill name in intent)\n\n"
-            "You MUST NOT install or use skills yourself. Your job is "
-            "structural decomposition — workers do the execution. Do NOT "
-            "use cm_browser yourself for platform-specific tasks; create "
-            "a child gap for that work instead.\n"
+            "\n--- SKILL CHECK ---\n"
+            "Before decomposing, scan_local. If a skill matches a child's work:\n"
+            "  - Embed skill name in child intent\n"
+            "  - Set tool_suggestions to derived tool_name "
+            "(non-alphanum->underscore, lowercase)\n"
+            "  - Set max_worker_turns=60 for complex multi-step gaps\n"
+            "Do NOT install/use skills yourself or use cm_browser — "
+            "create children for execution.\n"
             "--- END SKILL CHECK ---"
         )
     parts.append(
-        "\n--- SELF-DEBUGGING DIRECTIVE ---\n"
-        "If your work fails, stalls, or produces errors, DO NOT repeat the same "
-        "failing steps blindly. Instead:\n\n"
-        "1. Use terminal_run with a web-search command (e.g. curl, wget, or any "
-        "search tool you have) to research the specific error, updated selectors, "
-        "or changed page structures.\n"
-        "2. Inspect the full error output and any screenshots carefully.\n"
-        "3. Use cm_skill_registry(action='find_for_gap') or scan_local to see if "
-        "an existing skill covers the failing platform.\n"
-        "4. Adapt your approach based on what you learn, then retry.\n\n"
-        "You have access to web search, the skill registry, and all your tools. "
-        "Use them proactively to diagnose and fix issues without waiting for "
-        "operator help.\n"
-        "--- END SELF-DEBUGGING DIRECTIVE ---"
+        "\n--- SELF-DEBUG ---\n"
+        "Errors? Research the error, inspect output/screenshots, check skill "
+        "registry, adapt — don't blindly repeat.\n"
+        "--- END SELF-DEBUG ---"
     )
     parts.append(f"\nintent:\n{gap.intent}")
     parts.append(f"\ncriteria:\n{gap.criteria}\n")
@@ -467,10 +423,20 @@ def _build_initial_messages(
 
         parts.append("\n# Substrate context (auto-loaded for you)\n")
         parts.append(render_preloads(store, list(gap.context_preload)))
-    parts.append(
-        f"\nYou have {max_turns} turns. Each model call (one or more tool uses) "
-        f"counts as one turn."
-    )
+
+    # Inject past findings for this gap so the drone can build on prior work.
+    try:
+        past = store.findings_for_gap(gap.id, limit=15)
+    except Exception:
+        past = []
+    if past:
+        lines = ["\n# Past findings for this gap (from earlier runs)"]
+        for f in past:
+            kind = f.kind.value if f.kind else "?"
+            lines.append(f"  [{kind}] {f.summary}")
+        parts.append("\n".join(lines))
+
+    parts.append(f"\n{max_turns} turns.")
     return [{"role": "user", "content": "\n".join(parts)}]
 
 
@@ -598,6 +564,7 @@ def run_drone(
     system = load_hivemind()
 
     usage_total = Usage()
+    accumulated_cost: float = 0.0
     turns_used = 0
     error: str | None = None
     outcome = "max_turns"  # default if nothing terminates
@@ -734,6 +701,7 @@ def run_drone(
                 break
 
             turn_cost = cost_usd(client.provider, client.model, resp.usage)
+            accumulated_cost += turn_cost
             ceiling_crossed = False
             if signals is not None and run_id is not None:
                 ceiling_crossed = not signals.add_cost(run_id, turn_cost)
@@ -747,7 +715,9 @@ def run_drone(
                     stop_reason=resp.stop_reason,
                     tokens_in=resp.usage.tokens_in,
                     tokens_out=resp.usage.tokens_out,
+                    cache_read_input_tokens=resp.usage.cache_read_input_tokens,
                     cost_usd=turn_cost,
+                    gap_id=gap.id,
                     tool_calls=[tc.name for tc in resp.tool_calls],
                 )
                 # Mid-run narration. Fires for emergent workers at turns
@@ -866,13 +836,15 @@ def run_drone(
             terminal_box.close()
         if heartbeat is not None:
             heartbeat.stop()
-        # Best-effort browser cleanup. Closes any Chromium contexts this
-        # drone opened and releases its browser_slot claim so the next
-        # drone in the queue can come up.
+        # Best-effort authenticated (real Chrome) browser cleanup.
+        # Closes the persistent page for this drone so its tab doesn't
+        # linger after the drone exits.
         try:
-            from drone_graph.tools.builtins.browser.tool import cleanup_for_drone
+            from drone_graph.tools.builtins.browser.authenticated.tool import (
+                cleanup_for_drone as auth_cleanup,
+            )
 
-            cleanup_for_drone(drone_id, signals)
+            auth_cleanup(drone_id)
         except Exception:  # noqa: BLE001
             pass
         if signals is not None:
@@ -893,7 +865,7 @@ def run_drone(
         outcome = "fail"
 
     died_at = _now_iso()
-    total_cost = cost_usd(client.provider, client.model, usage_total)
+    total_cost = accumulated_cost
 
     _write_drone_node(
         substrate=store.substrate,

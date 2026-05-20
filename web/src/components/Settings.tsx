@@ -3,7 +3,7 @@ import { For, Show, createMemo, createResource, createSignal, onMount } from "so
 import { api } from "../api";
 import { isSoundEnabled, setSoundEnabled } from "../sound";
 import { refreshSettings, setView, store } from "../state";
-import type { ModelRegistry } from "../types";
+import type { ChromeProfileInfo, ModelRegistry } from "../types";
 import { BrowserProfiles } from "./BrowserProfiles";
 
 export function Settings() {
@@ -29,6 +29,9 @@ export function Settings() {
   const [workspaceDir, setWorkspaceDir] = createSignal(
     store.settings?.workspace_dir ?? "",
   );
+  const [chromeProfileDir, setChromeProfileDir] = createSignal(
+    store.settings?.chrome_profile_dir ?? "",
+  );
   const [saving, setSaving] = createSignal(false);
   const [savedAt, setSavedAt] = createSignal<Date | null>(null);
   const [error, setError] = createSignal<string | null>(null);
@@ -42,6 +45,16 @@ export function Settings() {
       /* ignore */
     }
   };
+
+  const [availableProfiles] = createResource<ChromeProfileInfo[]>(
+    async () => {
+      try {
+        return await api.authenticatedProfileAvailable();
+      } catch {
+        return [];
+      }
+    },
+  );
 
   const hasAnyKey = createMemo(
     () =>
@@ -114,6 +127,7 @@ export function Settings() {
         }),
         permission_tier: permissionTier(),
         workspace_dir: workspaceDir().trim() || null,
+        chrome_profile_dir: chromeProfileDir().trim() || null,
       });
       await refreshSettings();
       setAnthropicKey("");
@@ -377,9 +391,26 @@ export function Settings() {
 
         <Section title="authenticated Google profile">
           <Field label="profile path">
-            <Show when={authStatus()?.has_profile} fallback={<span class="faint">Not configured</span>}>
-              <span style={{color: "var(--green)"}}>Profile ready</span>
-            </Show>
+            <select
+              value={chromeProfileDir()}
+              onChange={async (e) => {
+                const path = e.currentTarget.value;
+                setChromeProfileDir(path);
+                if (path) {
+                  await api.authenticatedProfileSetup(path);
+                  await refreshAuthStatus();
+                }
+              }}
+            >
+              <option value="">— select a Chrome profile —</option>
+              <For each={availableProfiles()}>
+                {(p) => (
+                  <option value={p.path}>
+                    {p.name}{p.is_default ? " (default)" : ""}
+                  </option>
+                )}
+              </For>
+            </select>
           </Field>
           <Field label="status">
             <Show when={authStatus()?.cdp_running} fallback={<span class="faint">Stopped</span>}>
@@ -388,17 +419,8 @@ export function Settings() {
           </Field>
           <div class="row" style={{gap: "8px", "margin-top": "8px"}}>
             <button onClick={async () => {
-              await api.authenticatedProfileSetup();
-              await refreshAuthStatus();
-            }}>Launch Setup</button>
-            <button onClick={async () => {
-              await api.authenticatedProfileStart();
-              await refreshAuthStatus();
-            }}>Start Chrome</button>
-            <button onClick={async () => {
-              await api.authenticatedProfileStop();
-              await refreshAuthStatus();
-            }}>Stop Chrome</button>
+              await api.authenticatedProfileLaunchBrowser();
+            }}>Launch Chrome</button>
           </div>
         </Section>
 

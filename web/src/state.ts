@@ -624,6 +624,19 @@ export function ingestEvent(ev: StreamEvent): void {
     setTimeout(() => setStore("alignment_pulse_gap_id", null), 1800);
     playSound("dissent");
   }
+  if (kind === "drone.turn_cost") {
+    // Per-turn cost event from DroneTapeTailer. Refresh active drones
+    // so the UI picks up the accumulated cost update in real time
+    // (ActiveDrone.cost_usd is now accumulated, not per-turn).
+    void refreshActive();
+  }
+  if (kind === "drone.cost_final") {
+    // Final cost for a reaped drone. The drone.reaped structural refresh
+    // will catch the snapshot, but we also surface a brief cost line in
+    // the events tail so the operator sees what this drone cost.
+    // No separate action needed — drone.reaped scheduleRefresh already
+    // handles the snapshot + chat update.
+  }
 }
 
 async function refreshStatus(): Promise<void> {

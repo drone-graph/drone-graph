@@ -192,7 +192,6 @@ class DroneTapeTailer:
     """
 
     def __init__(self, run_id: str, bus: "EventBus | None" = None) -> None:
-        self._run_id = run_id
         self._dir = Path("var") / "tapes" / run_id
         self._lock = threading.Lock()
         self._state: dict[str, _DroneVitals] = {}
@@ -279,14 +278,55 @@ class DroneTapeTailer:
                 tout = rec.get("tokens_out")
                 cost = rec.get("cost_usd")
                 if isinstance(tin, int):
-                    v.tokens_in = tin
+                    v.tokens_in += tin
                 if isinstance(tout, int):
-                    v.tokens_out = tout
+                    v.tokens_out += tout
+                cache = rec.get("cache_read_input_tokens")
+                if isinstance(cache, int):
+                    v.cache_read_input_tokens += cache
                 if isinstance(cost, (int, float)):
-                    v.cost_usd = float(cost)
+                    v.turn_cost = float(cost)
+                    v.cost_usd += float(cost)
                 tcs = rec.get("tool_calls")
                 if isinstance(tcs, list):
                     v.last_tool_calls = [str(t) for t in tcs if t]
+                # Forward per-turn cost to the EventBus so the frontend gets
+                # real-time cost updates without waiting for drone death.
+                if self._bus is not None:
+                    self._bus.publish(
+                        "drone.turn_cost",
+                        gap_id=gap_id,
+                        turn=rec.get("turn"),
+                        turn_cost=rec.get("cost_usd"),
+                        accumulated_cost=v.cost_usd,
+                        tokens_in=v.tokens_in,
+                        tokens_out=v.tokens_out,
+                        cache_read_input_tokens=v.cache_read_input_tokens,
+                    )
+            elif ev == "drone.die":
+                # Capture final accumulated cost from the drone's exit event.
+                cost = rec.get("cost_usd")
+                tin = rec.get("tokens_in")
+                tout = rec.get("tokens_out")
+                if isinstance(cost, (int, float)):
+                    v.final_cost = float(cost)
+                if isinstance(tin, int):
+                    v.final_tokens_in = tin
+                if isinstance(tout, int):
+                    v.final_tokens_out = tout
+                cache = rec.get("cache_read_input_tokens")
+                if isinstance(cache, int):
+                    v.final_cache_read = cache
+                if self._bus is not None:
+                    self._bus.publish(
+                        "drone.cost_final",
+                        gap_id=gap_id,
+                        final_cost=rec.get("cost_usd"),
+                        tokens_in=rec.get("tokens_in"),
+                        tokens_out=rec.get("tokens_out"),
+                        cache_read_input_tokens=rec.get("cache_read_input_tokens"),
+                        outcome=rec.get("outcome"),
+                    )
             elif ev == "tool.terminal_run":
                 cmd = rec.get("cmd") or rec.get("command")
                 if isinstance(cmd, str):
@@ -386,9 +426,15 @@ class _DroneVitals:
         "last_command",
         "last_tool_calls",
         "tail",
-        "cost_usd",
-        "tokens_in",
-        "tokens_out",
+        "turn_cost",        # per-turn cost (last turn)
+        "cost_usd",          # accumulated cost across all turns
+        "tokens_in",         # accumulated input tokens
+        "tokens_out",        # accumulated output tokens
+        "cache_read_input_tokens",  # accumulated cache-read input tokens
+        "final_cost",        # final cost from drone.die (None while alive)
+        "final_tokens_in",   # final tokens_in from drone.die
+        "final_tokens_out",  # final tokens_out from drone.die
+        "final_cache_read",  # final cache_read_input_tokens from drone.die
         "browser_state",
     )
 
@@ -396,14 +442,16 @@ class _DroneVitals:
         self.turn: int | None = None
         self.max_turns: int | None = None
         self.last_command: str | None = None
-        # Names of the tools the drone called on its most recent turn.
-        # Surfaced on the active-drones rail as "now: cm_browser" etc.
-        # so the operator can see what each drone is doing without
-        # waiting for the drone to exit and narrate.
         self.last_tool_calls: list[str] = []
         self.tail: list[str] = []
-        self.cost_usd: float | None = None
-        self.tokens_in: int | None = None
-        self.tokens_out: int | None = None
+        self.turn_cost: float | None = None   # last turn's cost
+        self.cost_usd: float = 0.0            # accumulated across turns
+        self.tokens_in: int = 0               # accumulated input tokens
+        self.tokens_out: int = 0              # accumulated output tokens
+        self.cache_read_input_tokens: int = 0 # accumulated cache-read input tokens
+        self.final_cost: float | None = None
+        self.final_tokens_in: int | None = None
+        self.final_tokens_out: int | None = None
+        self.final_cache_read: int | None = None
         # Latest cm_browser state snapshot for the drone working this gap.
         self.browser_state: dict[str, Any] | None = None

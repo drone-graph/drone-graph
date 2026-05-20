@@ -77,11 +77,11 @@ class Settings(BaseModel):
     # Tracks whether the operator has explicitly seen + answered the
     # workspace step during onboarding.
     workspace_dir_acknowledged: bool = False
-    # Absolute path to a Chrome user-data directory that carries an
-    # authenticated session (Google/Gmail/YouTube etc.). Set via the
-    # authenticated-browser setup API. **Never** exposed to AI — the
-    # authenticated-browser tool resolves it server-side.
-    authenticated_chrome_profile_path: str | None = None
+    # Absolute path to a Chrome user-data directory that carries the
+    # dedicated drone-graph Chrome profile. Set via the Settings UI
+    # during onboarding (folder picker). **Never** exposed to AI — the
+    # browser tool resolves it server-side.
+    chrome_profile_dir: str | None = None
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
@@ -90,7 +90,11 @@ def load_settings() -> Settings:
     if not p.exists():
         return Settings()
     try:
-        return Settings.model_validate_json(p.read_text(encoding="utf-8"))
+        raw = json.loads(p.read_text(encoding="utf-8"))
+        # Migration: rename old field to new field name.
+        if "authenticated_chrome_profile_path" in raw and "chrome_profile_dir" not in raw:
+            raw["chrome_profile_dir"] = raw.pop("authenticated_chrome_profile_path")
+        return Settings.model_validate(raw)
     except Exception:
         return Settings()
 
@@ -166,6 +170,9 @@ class SettingsView(BaseModel):
     # Empty string means the default "workspace" folder in the project root.
     workspace_dir: str
     workspace_dir_acknowledged: bool = False
+    # Absolute path to the Chrome user-data directory (the drone-graph profile).
+    # Set via the Settings UI — never exposed to AI.
+    chrome_profile_dir: str | None = None
     settings_path: str
     updated_at: datetime
 
@@ -192,6 +199,7 @@ def view(s: Settings) -> SettingsView:
         permission_tier_acknowledged=s.permission_tier_acknowledged,
         workspace_dir=_effective_workspace_dir(s),
         workspace_dir_acknowledged=s.workspace_dir_acknowledged,
+        chrome_profile_dir=s.chrome_profile_dir,
         settings_path=str(settings_path()),
         updated_at=s.updated_at,
     )
@@ -238,6 +246,8 @@ class SettingsPatch(BaseModel):
     # Absolute path to the workspace directory. Empty string resets to default.
     workspace_dir: str | None = None
     workspace_dir_acknowledged: bool | None = None
+    # Absolute path to Chrome user-data directory. Empty string clears it.
+    chrome_profile_dir: str | None = None
 
 
 def merge_patch(s: Settings, p: SettingsPatch) -> Settings:
@@ -282,4 +292,6 @@ def merge_patch(s: Settings, p: SettingsPatch) -> Settings:
         new.workspace_dir = p.workspace_dir.strip() or None
     if p.workspace_dir_acknowledged is not None:
         new.workspace_dir_acknowledged = p.workspace_dir_acknowledged
+    if p.chrome_profile_dir is not None:
+        new.chrome_profile_dir = p.chrome_profile_dir.strip() or None
     return new

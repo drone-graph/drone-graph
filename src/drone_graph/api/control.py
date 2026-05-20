@@ -220,7 +220,6 @@ class SwarmController:
         self.tape = EventTape(self.tape_path)
         self.event_bus.set_tape_path(self.tape_path)
         self.drone_tape_tailer = DroneTapeTailer(self.run_id, bus=self.event_bus)
-
         self.control = SchedulerControl()
         # Start paused — the substrate is dormant until the user sends a
         # first prompt. This is the "cobalt dot in the dark" empty state.
