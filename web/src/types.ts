@@ -182,6 +182,7 @@ export interface SettingsView {
   permission_tier_acknowledged: boolean;
   workspace_dir: string | null;
   workspace_dir_acknowledged: boolean;
+  chrome_profile_dir: string | null;
   settings_path: string;
   updated_at: string;
 }
@@ -201,6 +202,7 @@ export interface SettingsPatch {
   permission_tier_acknowledged?: boolean | null;
   workspace_dir?: string | null;
   workspace_dir_acknowledged?: boolean | null;
+  chrome_profile_dir?: string | null;
 }
 
 export type InboxActionType =
@@ -282,17 +284,16 @@ export interface ModelRegistry {
   models: RegistryModel[];
 }
 
-// ---- Browser launcher ----------------------------------------------------
-
-export interface LaunchResponse {
-  success: boolean;
-  message: string;
-}
-
 // ---- Authenticated profile ------------------------------------------------
 
 export interface AuthenticatedConfig {
   cdp_port: number;
   authenticated_domains: string[];
   chrome_path: string | null;
+}
+
+export interface ChromeProfileInfo {
+  name: string;
+  path: string;
+  is_default: boolean;
 }

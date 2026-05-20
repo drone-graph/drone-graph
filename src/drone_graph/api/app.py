@@ -422,6 +422,10 @@ def _configure_logging() -> None:
     # Silence the extremely noisy watchfiles re-scanner (one INFO line
     # per second in reload mode). Keep uvicorn.error for startup messages.
     logging.getLogger("watchfiles.main").setLevel(logging.WARNING)
+    # Suppress chatty Neo4j "constraint already exists" INFO notifications.
+    # The bootstrap runs CREATE CONSTRAINT ... IF NOT EXISTS which produces
+    # harmless GqlStatusObject notices every startup.
+    logging.getLogger("neo4j.notifications").setLevel(logging.WARNING)
 
 
 # ---- Entry point -----------------------------------------------------------

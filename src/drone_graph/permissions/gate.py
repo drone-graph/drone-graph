@@ -66,10 +66,9 @@ _LOCAL_TOOLS: frozenset[str] = frozenset({
 # both ``ask_external`` and ``ask_everything``.
 _EXTERNAL_TOOLS: frozenset[str] = frozenset({
     "cm_browser",
+    "cm_check_browser",
     "cm_install_package",
     "cm_register_tool",
-    "cm_authenticated_browser",
-    "cm_check_auth_profile",
 })
 
 

@@ -140,6 +140,18 @@ class GapStore:
         findings.reverse()
         return findings
 
+    def findings_for_gap(self, gap_id: str, limit: int = 30) -> list[Finding]:
+        """Most recent findings that ``:AFFECTS`` a specific gap, oldest first."""
+        rows = self.substrate.execute_read(
+            "MATCH (f:Finding)-[:AFFECTS]->(g:Gap {id: $gap_id}) "
+            "RETURN f ORDER BY f.tick DESC, f.created_at DESC LIMIT $limit",
+            gap_id=gap_id,
+            limit=limit,
+        )
+        findings = [_finding_from_node(r["f"]) for r in rows]
+        findings.reverse()
+        return findings
+
     def all_findings(self) -> list[Finding]:
         rows = self.substrate.execute_read(
             "MATCH (f:Finding) RETURN f ORDER BY f.tick ASC, f.created_at ASC",

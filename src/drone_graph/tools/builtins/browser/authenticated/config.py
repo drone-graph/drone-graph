@@ -1,9 +1,9 @@
-"""Configuration for the authenticated Chrome profile lane.
+"""Configuration for the Chrome browser lane.
 
 Stored as a standalone JSON file at
 ``~/.config/drone-graph/authenticated-browser-config.json`` — separate from
 ``settings.json`` because the profile path itself lives in the Settings model
-(``authenticated_chrome_profile_path``) and is never exposed to the AI.
+(``chrome_profile_dir``) and is never exposed to the AI.
 
 Fields
 ------
@@ -45,7 +45,7 @@ class AuthenticatedConfig:
     """Settings for the authenticated Chrome lane.
 
     Note: The profile directory path is NOT stored here — it lives in the
-    Settings model (``settings.authenticated_chrome_profile_path``) so it
+    Settings model (``settings.chrome_profile_dir``) so it
     is never exposed to the AI.
     """
 

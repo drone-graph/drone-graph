@@ -210,6 +210,7 @@ class Scheduler:
         # Seed the project workspace folder tree using the root gap's intent
         # (no-op if workspace_dir is None or roots don't exist yet).
         self._init_project_workspace()
+
         # Self-healing tick loop. A single bad tick (Neo4j blip, race
         # condition, transient bug) must NOT kill the whole scheduler —
         # the operator would just see "active" forever with nothing
@@ -271,6 +272,47 @@ class Scheduler:
             )
             sys.stderr.flush()
 
+    def _start_managed_chrome(self) -> None:
+        """If the operator has configured a Chrome profile, launch the shared
+        Chrome instance so all drone subprocesses connect via CDP instead of
+        each trying to launch their own browser."""
+        try:
+            from drone_graph.api.settings import load_settings
+
+            settings = load_settings()
+            if not settings.chrome_profile_dir:
+                return  # no profile configured — nothing to start
+
+            from drone_graph.tools.builtins.browser.authenticated.config import (
+                load_config,
+            )
+            from drone_graph.tools.builtins.browser.authenticated.chrome_launcher import (
+                AuthenticatedChrome,
+            )
+
+            config = load_config()
+            profile_dir = Path(settings.chrome_profile_dir)
+            AuthenticatedChrome.start_managed(config, profile_dir)
+        except Exception:
+            import traceback
+            traceback.print_exc()
+            sys.stderr.write(
+                "[scheduler] Failed to start managed Chrome; browser tools "
+                "will fall back to per-process launches\n"
+            )
+            sys.stderr.flush()
+
+    def _stop_managed_chrome(self) -> None:
+        """Kill the shared Chrome process on scheduler exit."""
+        try:
+            from drone_graph.tools.builtins.browser.authenticated.chrome_launcher import (
+                AuthenticatedChrome,
+            )
+
+            AuthenticatedChrome.stop_managed()
+        except Exception:
+            pass  # best-effort cleanup
+
     def _init_project_workspace(self) -> None:
         """Create the project workspace folder tree.
 
@@ -313,11 +355,13 @@ class Scheduler:
         )
 
     def _derive_project_name(self) -> str | None:
-        """Derive a session-unique project name from the root gap's intent.
+        """Derive a stable project name from the root gap's intent.
 
         Returns a filesystem-safe string like
-        ``build-a-coffee-storefront--20260519T112022Z-abc12345``.
-        The ``run_id`` suffix guarantees each session gets its own folder.
+        ``build-a-coffee-storefront``.
+        The name is derived purely from the root gap's intent, so the same
+        project always maps to the same workspace folder across restarts
+        (as long as the database is not reset).
         Returns ``None`` when there is no root gap yet.
         """
         roots = self.store.roots()
@@ -329,11 +373,8 @@ class Scheduler:
         # Take first ~5 words, lowercase, join with hyphens
         words = intent.lower().split()[:5]
         name = "-".join(words)
-        # Append the run_id so every session gets a unique workspace folder
-        run_suffix = self.run_id
-        full_name = f"{name}--{run_suffix}"
         # Sanitise for Windows — < > : " / \ | ? * are illegal in filenames
-        safe = full_name.translate(str.maketrans(dict.fromkeys('<>:"/\\|?*', "_")))
+        safe = name.translate(str.maketrans(dict.fromkeys('<>:"/\\|?*', "_")))
         # Keep under 200 chars, strip trailing hyphens
         safe = safe[:200].rstrip("-")
         return safe or None
@@ -346,6 +387,7 @@ class Scheduler:
         self._check_cost_ceiling()
         self._signal_cancellations()
         self._hard_kill_overdue()
+        self._reap_orphan_pages()
         self._inject_pending_events()
         # Re-check project workspace: in the web UI path the root gap may
         # not exist when ``run()`` first calls ``_init_project_workspace()``,
@@ -523,10 +565,62 @@ class Scheduler:
             out.append(self.preset_slot)
         return out
 
+    def _reap_orphan_pages(self) -> None:
+        """Remove ``page_ledger`` entries for gaps that are filled or retired.
+
+        Called every tick so the shared SQLite page-ledger does not grow
+        unboundedly as gaps complete.  Entries for unfilled gaps are kept
+        so successor drones can find the existing browser tab.
+        """
+        try:
+            from drone_graph.tools.builtins.browser.authenticated.page_ledger import (
+                reap_filled_gaps,
+            )
+
+            cleaned = reap_filled_gaps(self.store)
+            if cleaned:
+                print(
+                    f"[scheduler] reaped {cleaned} page-ledger entr{'y' if cleaned == 1 else 'ies'} for filled/retired gaps",
+                    flush=True,
+                )
+        except Exception:
+            pass
+
     def _on_drone_exit(self, proc: _Process) -> None:
         rc = proc.proc.returncode
         outcome = _EXIT_TO_OUTCOME.get(rc, f"exit:{rc}")
         latency = time.time() - proc.spawned_at
+
+        cost_val: float | None = None
+        tokens_in_val: int | None = None
+        tokens_out_val: int | None = None
+        try:
+            if proc.tape_path and proc.tape_path.exists():
+                with proc.tape_path.open("rb") as f:
+                    data = f.read()
+                    if data:
+                        for line in reversed(data.splitlines()):
+                            if not line:
+                                continue
+                            try:
+                                rec = json.loads(line.decode("utf-8"))
+                            except (UnicodeDecodeError, json.JSONDecodeError):
+                                continue
+                            if rec.get("event") == "drone.die":
+                                c = rec.get("cost_usd")
+                                if isinstance(c, (int, float)):
+                                    cost_val = float(c)
+                                ti = rec.get("tokens_in")
+                                if isinstance(ti, int):
+                                    tokens_in_val = ti
+                                to = rec.get("tokens_out")
+                                if isinstance(to, int):
+                                    tokens_out_val = to
+                                break
+                            break
+        except Exception:
+            pass
+
         if proc.role == "preset:gap_finding":
             self._on_gf_exit(proc, outcome)
         elif proc.role == "preset:alignment":
@@ -541,6 +635,9 @@ class Scheduler:
             outcome=outcome,
             exit_code=rc,
             latency_s=round(latency, 2),
+            cost_usd=cost_val,
+            tokens_in=tokens_in_val,
+            tokens_out=tokens_out_val,
         )
 
     def _on_gf_exit(self, proc: _Process, outcome: str) -> None:
@@ -821,6 +918,9 @@ class Scheduler:
             self._on_drone_exit(proc)
         self.workers.clear()
         self.preset_slot = None
+
+        # Stop the managed Chrome process on scheduler exit.
+        self._stop_managed_chrome()
 
     def _wait_for_exits(
         self, procs: list[_Process], timeout_s: float

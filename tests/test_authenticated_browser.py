@@ -1,8 +1,8 @@
-"""Security tests for the authenticated browser lane.
+"""Security tests for the real-Chrome browser lane.
 
 These tests verify security invariants:
-- ``cm_check_auth_profile`` returns only a boolean — no path leakage
-- ``cm_authenticated_browser`` has no ``profile`` parameter in its schema
+- ``cm_check_browser`` returns only a boolean — no path leakage
+- ``cm_browser`` has no ``profile`` parameter in its schema
 - The profile path lives only in Settings (settings.json), never in the
   AI-facing config or tool definitions
 - Every action goes through a confirmation gate
@@ -19,10 +19,10 @@ from drone_graph.tools.builtins.browser.authenticated.config import (
     AuthenticatedConfig,
 )
 from drone_graph.tools.builtins.browser.authenticated.status_tool import (
-    cm_check_auth_profile,
+    cm_check_browser,
 )
 from drone_graph.tools.builtins.browser.authenticated.tool import (
-    cm_authenticated_browser,
+    cm_browser,
 )
 from drone_graph.tools.builtins.browser.authenticated.confirmation import (
     require_confirmation,
@@ -67,14 +67,14 @@ EXPECTED_ACTION_PROPERTIES = {
 }
 
 
-# ── Test 1: cm_check_auth_profile returns only boolean ──────────────────────
+# ── Test 1: cm_check_browser returns only boolean ──────────────────────────
 
 
-def test_cm_check_auth_profile_returns_only_boolean() -> None:
-    """``cm_check_auth_profile`` returns JSON with exactly one key
+def test_cm_check_browser_returns_only_boolean() -> None:
+    """``cm_check_browser`` returns JSON with exactly one key
     ``has_profile`` whose value is a ``bool``."""
     ctx = _make_ctx()
-    result = cm_check_auth_profile({}, ctx)
+    result = cm_check_browser({}, ctx)
 
     parsed = json.loads(result.content)
     assert isinstance(parsed, dict), "result must be a JSON object"
@@ -86,14 +86,14 @@ def test_cm_check_auth_profile_returns_only_boolean() -> None:
     )
 
 
-# ── Test 2: cm_check_auth_profile has no path leakage ────────────────────────
+# ── Test 2: cm_check_browser has no path leakage ───────────────────────────
 
 
-def test_cm_check_auth_profile_no_path_leakage() -> None:
+def test_cm_check_browser_no_path_leakage() -> None:
     """The JSON output must contain exactly one key, ``has_profile``,
     and no path, name, directory listing, or any other data."""
     ctx = _make_ctx()
-    result = cm_check_auth_profile({}, ctx)
+    result = cm_check_browser({}, ctx)
 
     parsed = json.loads(result.content)
     assert isinstance(parsed, dict)
@@ -108,14 +108,14 @@ def test_cm_check_auth_profile_no_path_leakage() -> None:
         )
 
 
-# ── Test 3: cm_authenticated_browser has no profile param ───────────────────
+# ── Test 3: cm_browser has no profile param ────────────────────────────────
 
 
-def test_cm_authenticated_browser_has_no_profile_param() -> None:
-    """The Anthropic tool definition for ``cm_authenticated_browser`` must
+def test_cm_browser_has_no_profile_param() -> None:
+    """The Anthropic tool definition for ``cm_browser`` must
     NOT contain a ``profile`` property in its input schema."""
-    tool_def = to_anthropic_tool_def("cm_authenticated_browser")
-    assert tool_def is not None, "cm_authenticated_browser must be registered"
+    tool_def = to_anthropic_tool_def("cm_browser")
+    assert tool_def is not None, "cm_browser must be registered"
 
     props = tool_def.get("input_schema", {}).get("properties", {})
     assert "profile" not in props, (
@@ -146,20 +146,20 @@ def test_cm_authenticated_browser_has_no_profile_param() -> None:
     assert props["action"].get("type") == "string", "action must be a string"
 
 
-# ── Test 4: cm_authenticated_browser fails when no profile configured ───────
+# ── Test 4: cm_browser fails when no profile configured ────────────────────
 
 
-def test_cm_authenticated_browser_fails_when_no_profile() -> None:
-    """Calling ``cm_authenticated_browser`` without a configured profile path
-    must return an error mentioning "No authenticated profile" or similar."""
+def test_cm_browser_fails_when_no_profile() -> None:
+    """Calling ``cm_browser`` without a configured profile path
+    must return an error mentioning "No Chrome profile" or similar."""
     ctx = _make_ctx()
 
-    # Patch load_settings to return a Settings with no profile path.
+    # Patch load_settings at source so lazy import inside the function sees it.
     with patch(
-        "drone_graph.tools.builtins.browser.authenticated.tool.load_settings"
+        "drone_graph.api.settings.load_settings"
     ) as mock_load:
         mock_load.return_value = Settings()
-        result = cm_authenticated_browser(
+        result = cm_browser(
             {"action": "open_url", "url": "https://example.com"}, ctx
         )
 
@@ -168,16 +168,16 @@ def test_cm_authenticated_browser_fails_when_no_profile() -> None:
         f"expected ok=false, got {result.content}"
     )
     error_msg = parsed.get("error", "")
-    assert "authenticated" in error_msg.lower() or "profile" in error_msg.lower(), (
-        f"error must reference profile/auth, got: {error_msg}"
+    assert "chrome profile" in error_msg.lower() or "profile" in error_msg.lower(), (
+        f"error must reference profile, got: {error_msg}"
     )
 
 
-# ── Test 5: cm_authenticated_browser requires confirmation ──────────────────
+# ── Test 5: cm_browser requires confirmation ──────────────────────────────
 
 
-def test_cm_authenticated_browser_requires_confirmation() -> None:
-    """Structural test: ``cm_authenticated_browser`` must reference
+def test_cm_browser_requires_confirmation() -> None:
+    """Structural test: ``cm_browser`` must reference
     ``require_confirmation``."""
     # Verify the confirmation module is importable and callable.
     assert callable(require_confirmation), (
@@ -198,13 +198,13 @@ def test_cm_authenticated_browser_requires_confirmation() -> None:
 
     # Check that the dispatcher function's bytecode references the name.
     # co_names captures all global/named references in the function body.
-    assert "require_confirmation" in tool_mod.cm_authenticated_browser.__code__.co_names, (
-        "cm_authenticated_browser function body must reference "
+    assert "require_confirmation" in tool_mod.cm_browser.__code__.co_names, (
+        "cm_browser function body must reference "
         "require_confirmation by name"
     )
 
 
-# ── Test 6: config does not store profile path ──────────────────────────────
+# ── Test 6: config does not store profile path ─────────────────────────────
 
 
 def test_config_does_not_store_profile_path() -> None:
@@ -226,51 +226,51 @@ def test_config_does_not_store_profile_path() -> None:
     assert "chrome_path" in cfg_fields, "expected chrome_path in config"
 
 
-# ── Test 7: settings has auth profile field ─────────────────────────────────
+# ── Test 7: settings has chrome_profile_dir field ──────────────────────────
 
 
-def test_settings_has_auth_profile_field() -> None:
-    """``Settings`` model must have ``authenticated_chrome_profile_path``
+def test_settings_has_chrome_profile_dir_field() -> None:
+    """``Settings`` model must have ``chrome_profile_dir``
     as ``str | None = None`` — this is where the path lives, never in the
     AI-facing tool config."""
     # Check the field exists
     assert hasattr(Settings, "model_fields"), (
         "Settings must be a Pydantic model with model_fields"
     )
-    field_info = Settings.model_fields.get("authenticated_chrome_profile_path")
+    field_info = Settings.model_fields.get("chrome_profile_dir")
     assert field_info is not None, (
-        "Settings must have an 'authenticated_chrome_profile_path' field. "
+        "Settings must have a 'chrome_profile_dir' field. "
         f"Available fields: {sorted(Settings.model_fields)}"
     )
 
     # Verify default is None
     s = Settings()
-    assert s.authenticated_chrome_profile_path is None, (
-        f"default must be None, got {s.authenticated_chrome_profile_path!r}"
+    assert s.chrome_profile_dir is None, (
+        f"default must be None, got {s.chrome_profile_dir!r}"
     )
 
     # Verify it accepts a string
-    s2 = Settings(authenticated_chrome_profile_path="/some/path")
-    assert s2.authenticated_chrome_profile_path == "/some/path"
+    s2 = Settings(chrome_profile_dir="/some/path")
+    assert s2.chrome_profile_dir == "/some/path"
 
 
-# ── Test 8: both tools are registered ───────────────────────────────────────
+# ── Test 8: both tools are registered ──────────────────────────────────────
 
 
 def test_both_tools_are_registered() -> None:
-    """Both ``cm_authenticated_browser`` and ``cm_check_auth_profile`` must
+    """Both ``cm_browser`` and ``cm_check_browser`` must
     exist in the builtin tool registry."""
-    browser_record = builtin_to_record("cm_authenticated_browser")
+    browser_record = builtin_to_record("cm_browser")
     assert browser_record is not None, (
-        "cm_authenticated_browser is not registered in the tool registry"
+        "cm_browser is not registered in the tool registry"
     )
-    assert browser_record.name == "cm_authenticated_browser"
+    assert browser_record.name == "cm_browser"
 
-    check_record = builtin_to_record("cm_check_auth_profile")
+    check_record = builtin_to_record("cm_check_browser")
     assert check_record is not None, (
-        "cm_check_auth_profile is not registered in the tool registry"
+        "cm_check_browser is not registered in the tool registry"
     )
-    assert check_record.name == "cm_check_auth_profile"
+    assert check_record.name == "cm_check_browser"
 
     # Verify they're builtins
     from drone_graph.tools.records import ToolKind

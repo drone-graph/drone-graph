@@ -26,6 +26,7 @@ class Usage:
     tokens_in: int = 0
     tokens_out: int = 0
     cache_read_input_tokens: int = 0
+    cost: float = 0.0  # actual cost from API (when available) or estimated
 
 
 @dataclass
@@ -192,22 +193,41 @@ def cost_usd(provider: Provider, model: str, usage: Usage) -> float:
     (authoritative) with a small hardcoded fallback for the case where the
     registry can't be loaded.
 
-    Applies the cache-read discount when ``usage.cache_read_input_tokens`` is
-    non-zero and the model has a known cache-in rate. The discount is the
-    difference between the full input rate and the cache rate, applied only
-    to the tokens that were actually served from cache.
+    Both provider clients pre-compute cost inside ``chat()`` and set
+    ``usage.cost`` from token counts + registry pricing, so this function
+    is typically called with ``usage.cost`` already populated and returns
+    that value directly.
+
+    Non-cached input tokens are billed at ``in_rate``, cache-read input
+    tokens at ``cache_in_rate``, and output tokens at ``out_rate``.
+    The Anthropic Messages API reports ``input_tokens`` and
+    ``cache_read_input_tokens`` as separate non-overlapping pools —
+    ``input_tokens`` excludes cached content.  Each pool gets its own rate.
     """
+
+    # If the API already reported the actual cost, use it directly
+    if usage.cost > 0:
+        return usage.cost
+
     rates = _load_pricing().get((provider, model))
     if rates is None:
-        rates = _PRICE_FALLBACK.get((provider, model), (0.0, 0.0, None))
+        rates = _PRICE_FALLBACK.get((provider, model), None)
+    if rates is None:
+        # unknown model → log warning and return $0
+        return 0.0
     in_rate, out_rate, cache_in_rate = rates
-    cost = (usage.tokens_in * in_rate + usage.tokens_out * out_rate) / 1_000_000
+
+    # The Anthropic Messages API reports input_tokens and
+    # cache_read_input_tokens as SEPARATE pools:
+    #   - input_tokens: non-cached input tokens (new content only)
+    #   - cache_read_input_tokens: tokens served from cache (separate)
+    # They are NOT overlapping — input_tokens excludes cached content.
+    # Bill each pool at its own rate.
+    cost = usage.tokens_in * in_rate / 1_000_000  # non-cached input
+    cost += usage.tokens_out * out_rate / 1_000_000
     if cache_in_rate is not None and usage.cache_read_input_tokens:
-        # Cache-read tokens are billed at ``cache_in_rate`` rather than the
-        # full ``in_rate``. Subtract the over-count.
-        discount = (usage.cache_read_input_tokens * (in_rate - cache_in_rate)) / 1_000_000
-        cost -= discount
-    return cost
+        cost += usage.cache_read_input_tokens * cache_in_rate / 1_000_000  # cached input
+    return max(0.0, cost)
 
 
 def _annotate_last_message_for_cache(
@@ -303,15 +323,23 @@ class AnthropicClient:
                         "input": dict(block.input),
                     }
                 )
+        # Cost is computed locally from the token counts returned by the API
+        # (input, output, cache_read) plus the model registry pricing, so
+        # every ChatResponse carries an estimated cost on ``usage.cost``
+        # without needing a second pass from the caller.
+        usage = Usage(
+            tokens_in=resp.usage.input_tokens,
+            tokens_out=resp.usage.output_tokens,
+            cache_read_input_tokens=getattr(resp.usage, "cache_read_input_tokens", 0),
+            cost=0.0,
+        )
+        usage.cost = cost_usd(Provider.anthropic, self.model, usage)
+
         return ChatResponse(
             text="".join(text_parts),
             tool_calls=tool_calls,
             stop_reason=resp.stop_reason or "",
-            usage=Usage(
-                tokens_in=resp.usage.input_tokens,
-                tokens_out=resp.usage.output_tokens,
-                cache_read_input_tokens=getattr(resp.usage, "cache_read_input_tokens", 0),
-            ),
+            usage=usage,
             raw_assistant_content=raw_content,
         )
 
@@ -470,11 +498,30 @@ class OpenAIClient:
         usage_obj = resp.usage
         tokens_in = int(getattr(usage_obj, "prompt_tokens", 0) or 0)
         tokens_out = int(getattr(usage_obj, "completion_tokens", 0) or 0)
+        # OpenAI returns cached prompt tokens in prompt_tokens_details.cached_tokens.
+        # Unlike Anthropic, OpenAI's prompt_tokens INCLUDES cached tokens as a
+        # subset.  We subtract them here so tokens_in matches the Anthropic
+        # convention (non-cached input only), letting cost_usd() apply a
+        # uniform formula for both providers.
+        cache_read = 0
+        try:
+            details = getattr(usage_obj, "prompt_tokens_details", None)
+            if details is not None:
+                cache_read = int(getattr(details, "cached_tokens", 0) or 0)
+        except Exception:
+            pass
+        non_cache_in = max(0, tokens_in - cache_read)
+        usage = Usage(
+            tokens_in=non_cache_in,
+            tokens_out=tokens_out,
+            cache_read_input_tokens=cache_read,
+        )
+        usage.cost = cost_usd(self.provider, self.model, usage)
         return ChatResponse(
             text=text,
             tool_calls=tool_calls,
             stop_reason=choice.finish_reason or "",
-            usage=Usage(tokens_in=tokens_in, tokens_out=tokens_out),
+            usage=usage,
             raw_assistant_content=raw_content,
         )
 
