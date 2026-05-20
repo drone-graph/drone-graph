@@ -1,5 +1,12 @@
 # Phase 0 — First drone, first gap
 
+> **Superseded by [`phase-0-and-1.md`](phase-0-and-1.md).** This file
+> documents the original Phase 0 spec — including the now-defunct
+> `BLOCKED_BY` DAG model, the `submit-gap` / `run-orchestrator` CLI
+> commands (replaced by `gap create` / `drone run` / `orchestrator.loop`),
+> and the closed-status gap lifecycle (now `unfilled | filled | retired`).
+> Kept as history; for current state read `phase-0-and-1.md`.
+
 The minimum artifact that proves the core loop runs end to end.
 
 ## Goal

@@ -262,11 +262,11 @@ class _Heartbeat(threading.Thread):
         self._drone_id = drone_id
         self._ttl_s = ttl_s
         self._period_s = period_s
-        self._stop = threading.Event()
+        self._stop_event = threading.Event()
         self._lost = False
 
     def run(self) -> None:
-        while not self._stop.wait(self._period_s):
+        while not self._stop_event.wait(self._period_s):
             if not self._signals.heartbeat(
                 self._kind, self._key, self._drone_id, self._ttl_s
             ):
@@ -274,7 +274,7 @@ class _Heartbeat(threading.Thread):
                 return
 
     def stop(self) -> None:
-        self._stop.set()
+        self._stop_event.set()
         if self.is_alive():
             self.join(timeout=2.0)
 

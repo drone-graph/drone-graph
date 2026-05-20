@@ -1,0 +1,41 @@
+name: Bug report
+description: Something is broken or behaving unexpectedly.
+labels: [bug]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, what did you see instead?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Repro steps
+      description: |
+        The exact commands / scenario / config. Include the scenario name if
+        you ran one of the packaged demos, or paste the gap intent if it was
+        ad-hoc.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: |
+        Python version, OS, Neo4j (Colima / Docker Desktop / other), provider
+        (Anthropic / OpenAI) + model. `drone-graph --version` if applicable.
+      placeholder: |
+        Python 3.12.4, macOS 14.5, Colima + Neo4j 5, Anthropic claude-haiku-4-5
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / run artefacts
+      description: |
+        Relevant lines from `var/runs/<run>/events.jsonl` or `timeline.md`,
+        or the stack trace. Trim aggressively — first + last 50 lines is fine.
+      render: text

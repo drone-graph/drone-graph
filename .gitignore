@@ -37,3 +37,4 @@ experiments/
 
 # Chrome profile data (managed by the authenticated browser lane)
 chrome-data/
+README-preview.html

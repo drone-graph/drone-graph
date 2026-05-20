@@ -45,7 +45,7 @@ attempt order, not an explicit DAG.
 a fixed `tool_loadout` (`decompose / create / retire / reopen / rewrite_intent
 / noop`) and a `context_preload` that pre-renders recent findings + leaves +
 tree shape into the drone's initial message. Alignment is a peer preset
-(`tool_loadout = [write_alignment_finding]`). Both preset drones can batch
+(`tool_loadout = [write_alignment_finding, cm_deprecate_stale_tools]`). Both preset drones can batch
 up to 5 edits/findings per invocation. Real workers fill emergent leaves and
 the substrate auto-rolls up filled subtrees.
 

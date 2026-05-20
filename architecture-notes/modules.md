@@ -363,6 +363,15 @@ search.
 
 **Interface.**
 - `reset-db` — wipe the substrate, re-mint preset gaps + builtin tools.
+- `reset-signals [--signal-db PATH]` — wipe the Phase-3 SQLite sidecar
+  (`var/signals.db` by default).
+- `serve [--host] [--port] [--provider] [--model] [--cost-ceiling-usd]
+  [--signal-db] [--reload] [--skip-bringup]` — run the FastAPI Mission
+  Control web server with SSE + frontend. Auto-builds the Solid frontend
+  and brings Neo4j up via docker compose unless `--skip-bringup` is set.
+- `export-run [RUN_ID] [--out PATH] [--zip] [--skip-artefacts]` —
+  bundle a Mission Control session (events, tape, snapshot, artefacts)
+  for review.
 - `gap list [--status ...]`, `gap show <id-prefix>`,
   `gap tree`, `gap create --intent ... --criteria ...`.
 - `finding list [-n N] [--author ...] [--kind ...]`,
@@ -370,10 +379,12 @@ search.
 - `drone run [GAP_ID] [--provider ...] [--model ...] [--max-turns N]
   [--tape PATH]` — dispatch one drone against a gap (or auto-pick the
   oldest active leaf).
+- `tools deprecate-stale [--max-age-days N] [--dry-run]
+  [--flagged/--no-flagged]` — soft-deprecate tools that haven't been used
+  recently or that Alignment has flagged.
 - `model-registry fresh | update | sync`.
 
-**Grows into.** `submit-goal` shortcut · `tool list` / `tool show` (read
-the `:Tool` registry from the CLI) · `resolve-human-action` (Phase 6) ·
-`add-budget` (Phase 6).
+**Grows into.** `tool list` / `tool show` (read the `:Tool` registry from
+the CLI) · `resolve-human-action` (Phase 6) · `add-budget` (Phase 6).
 
 **Depends on.** Anything (by design).

@@ -5,6 +5,6 @@ AI doesn’t need specialisation, since frontier models have all the skills. Cor
 
 Similarly, corporate hierarchy is an artefact of people’s need for dominance hierarchy, which AI doesn’t have. AI can be more collaborative.
 
-The hypothesis is: A more egalitarian structure for agent orchestration will be more effective than replicating typical corporate structure.A true agent swarm needs swarm intelligence — a hive mind / group mind. One  shared consciousness across many units. Drones are  individual interchangeable members of the system. In AI, there mind is a single shared knowledge graph.
+The hypothesis is: A more egalitarian structure for agent orchestration will be more effective than replicating typical corporate structure.A true agent swarm needs swarm intelligence — a hive mind / group mind. One  shared consciousness across many units. Drones are  individual interchangeable members of the system. In AI, their mind is a single shared collective mind.
 
 Examples from sci fi: Ultron, The Borg, The Geth, Replicators from Stargate, Formics/Buggers from Enders game, Zerg (Starcraft)

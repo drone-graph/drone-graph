@@ -1,0 +1,44 @@
+name: Proposal
+description: A change to behavior, architecture, or the public surface.
+labels: [proposal]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this for anything beyond a typo or one-line fix. It's cheaper to
+        align on intent here than to land a PR and find out the design was
+        going somewhere else.
+  - type: textarea
+    id: intent
+    attributes:
+      label: Intent
+      description: |
+        What must be true after this lands? Write it like a gap intent:
+        "X exists / behaves like Y / is no longer Z." Not the implementation —
+        the desired state.
+    validations:
+      required: true
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Why
+      description: |
+        What's the gap in the world today? A bug, a missing primitive, a
+        contradiction between the notes and the code, a use case that's
+        currently impossible — name the concrete absence.
+    validations:
+      required: true
+  - type: textarea
+    id: sketch
+    attributes:
+      label: Sketch (optional)
+      description: |
+        Rough shape of the change. Files / modules / new primitives. Doesn't
+        need to be complete — a "here's roughly where I'd cut" is enough.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered (optional)
+      description: |
+        Other shapes you weighed and why they're worse. Helps reviewers skip
+        questions you've already thought through.

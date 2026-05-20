@@ -1,200 +1,213 @@
 # Drone Graph
 
-An execution substrate for AI swarms organized as a hivemind, not a corporate org chart.
+**Run your AI org like a species.**
 
-Read in order:
+The Borg got it right, and so did Ultron, and so do bees and ants. *Current multi-agent AI systems are just cosplay*. Drone Graph is what an AI workforce looks like when you stop pretending it's a company.
 
-1. [`core-idea/drone-theory.md`](core-idea/drone-theory.md) — the thesis
-2. [`core-idea/architectural_overview.md`](core-idea/architectural_overview.md) — consolidated architecture
-3. [`core-idea/decomposition.md`](core-idea/decomposition.md) — gap / finding mechanics + Gap Finding + Alignment behavior
-4. [`architecture-notes/modules.md`](architecture-notes/modules.md) — per-module intent and current CLI surface
-5. [`ROADMAP.md`](ROADMAP.md) — build plan
-6. [`architecture-notes/phase-0-and-1.md`](architecture-notes/phase-0-and-1.md) — what's built so far
-7. [`architecture-notes/model-registry.md`](architecture-notes/model-registry.md) — registry JSON, CLI, and enrichment (when you maintain or extend the catalog)
+Think: **Identical agents. Identical prompts. One shared hivemind.** There's no hierarchy and no roles, and work organizes around what's missing, not around reporting structures.
 
-## Status
+---
 
-**Unified drone runtime running end-to-end.** One drone class, one system prompt (`hivemind.md`); the gap it's dispatched against — and that gap's `tool_loadout` — determines what it does. Two preset gaps minted at substrate init: `preset:gap_finding` (structural author; batches up to 5 edits per invocation including `decompose`, `create`, `retire`, `reopen`, `rewrite_intent`, `noop`) and `preset:alignment` (observational; batches up to 5 findings). Emergent gaps minted by Gap Finding get a default loadout (a persistent bash shell + `cm_read_gap` + `cm_write_finding` with on-disk `artefact_paths` + `cm_register_tool` + `cm_request_tool`). Every drone gets universal `cm_*` query tools — no pre-rendered tree, drones query what they need. Tools live as `:Tool` nodes in the graph; drones can install new tools at runtime and register them for future drones. The substrate auto-fills an emergent parent gap when all its non-retired children are filled, emitting a `system`-authored finding. The combined orchestrator loop runs the whole thing against any of the packaged root seeds or synthetic gaps. No concurrency yet. See [`ROADMAP.md`](ROADMAP.md) for what comes next.
+## The prompt every drone reads on boot:
 
-## Setup
+> You are ephemeral. You are one of many. Your body dies when your gap is done.
+>
+> — `prompts/hivemind.md`
 
-Requires Python 3.12+, [Colima](https://github.com/abiosoft/colima) (or Docker Desktop), and **at least one** LLM vendor API key: **`ANTHROPIC_API_KEY`** and/or **`OPENAI_API_KEY`**.
+---
+
+## What it looks like
+
+<p align="center">
+  <img src="docs/images/mission-control.svg" alt="Drone Graph Mission Control — a dark dashboard with a left chat rail, a center substrate graph of gaps and findings with orbiting drones, and a right rail listing active drones and recently used tools." width="100%"/>
+</p>
+
+The chat is the only place you talk to the swarm, and you don't have to talk much. Goals in, and the hivemind takes hold. It's built for civilization-level work, requiring zero humans.
+
+<p align="center">
+  <img src="docs/images/substrate.svg" alt="The substrate close-up: preset gaps pulse with sonar rings at the top, an emergent root with seven finding satellites in the middle, drones orbiting active children, a sediment band for retired gaps at the bottom." width="80%"/>
+</p>
+
+Behind it, an orchestrator loop you can also drive headless:
+
+<p align="center">
+  <img src="docs/images/orchestrator-loop.gif" alt="A terminal session running python -m drone_graph.orchestrator.loop: Gap Finding decomposes a coffee storefront goal, a worker drone fills a leaf, the user pivots mid-run to B2B wholesale, Alignment flags the drift, Gap Finding retires the DTC subtree and rewrites the root, and a parent auto-rolls up."/>
+</p>
+
+---
+
+## How it works
+
+**Every drone is the same drone.**
+
+One Python class, one system prompt
+(`prompts/hivemind.md`). Drones boot identical, with no role, no name, no
+unique skills, no unique tools. The thing that makes one drone different
+from another is the *gap* it was spawned for.
+
+**A gap is the unit of missing work, not a task.**
+
+A task is an
+instruction issued top-down by a planner: "Marketing Manager, write the launch blog
+post by Friday." A gap is different, it's something missing from the world that ought to
+be there. It carries an *intent*, which is a vision of the future ("a launch blog post exists and is
+published"), an *acceptance criterion* (how to verify the gap was actually filled),
+a *tool loadout* (any explicit tool surface any drone working it
+receives, though drones can also choose their own tools),
+and a *model tier* (how expensive a turn is allowed to be).
+Gaps are minted by other drones, not by humans. Any drone can fill any
+gap.
+
+**The collective mind is one shared substrate.**
+
+It's not a chat history
+or a vector store. It's one Neo4j graph that every
+drone reads from and writes to, including gaps, findings (short, summarized
+post-its drones leave behind), tools (a registry that grows as drones
+install packages and register them for future drones), and pointers to
+on-disk artefacts. When a drone dissolves, its working memory dissolves
+with it. The collective mind is what stays. The next drone that wakes inherits
+everything the previous drones learned without inheriting their
+token-by-token histories.
+
+**The inspiration is older than the field.**
+
+Bees, ants, and termites
+have run organizations this way for tens of millions of years. Identical
+workers, no manager, coordination through pheromones on a shared
+substrate. Science fiction landed in the same place decades ago:
+the Borg, the Geth, the Zerg, the Formics, Ultron's drones, all the
+same solution to collective work.
+
+---
+
+## The org chart is the costume
+
+<p align="center">
+  <img src="docs/images/hierarchy-vs-swarm.svg" alt="On the left, a corporate org chart in which every role — CEO, two VPs, four managers, four ICs — is labeled with the same model, claude-sonnet-4-6, and a single cobalt slash crosses the whole diagram. On the right, seven identical glowing drones connected by dashed peer signal-protocol lines, with no roles." width="100%"/>
+</p>
+
+Watch any multi-agent demo. One agent is the **CEO**, one is the
+researcher, one is "Maya from marketing" — personalities, job titles,
+opinions about Q4 strategy. Underneath, they are the same model in three
+coats, and the costume costs you: each agent defends the role it was
+assigned, hallucinates work that fits, and shares nothing with the others
+but a chat log pretending to be memory. Drone Graph is the swarm without
+the suits. One drone class, one prompt, one shared mind; the gap decides
+what the drone does, not the org chart.
+
+---
+
+## Quickstart
+
+You need Python 3.12+, [Colima](https://github.com/abiosoft/colima) (or
+Docker Desktop) for Neo4j, and at least one of **`ANTHROPIC_API_KEY`** or
+**`OPENAI_API_KEY`**.
 
 ```sh
 colima start
 docker compose up -d neo4j
 source .venv/bin/activate
-export ANTHROPIC_API_KEY=...   # optional if you use OpenAI only
-export OPENAI_API_KEY=...      # optional if you use Anthropic only
+export ANTHROPIC_API_KEY=...     # and/or OPENAI_API_KEY
+drone-graph serve                # → http://localhost:8765
 ```
 
-Neo4j Browser: http://localhost:7474 (user `neo4j`, password `drone-graph-dev`).
+`drone-graph serve` brings up the FastAPI backend, builds the frontend,
+opens Mission Control, and starts the scheduler. Type a goal into the
+chat rail and watch the substrate fill in.
 
-Drones and the orchestrator loop talk to either **Anthropic (Claude)** or **OpenAI (GPT)** through those same keys. **If only one key is exported**, that provider is used and you do not need any extra flags—for example, with just an OpenAI key, `drone-graph drone run "$GAP"` picks GPT with a sensible default model.
-
-### Behaviour when both keys are present
-
-*This describes the **current** CLI and orchestrator setup only; tier- or registry-driven routing may change defaults later.*
-
-If **both** keys are in your environment, the stack **defaults to Claude** so your runs do not hop between vendors without you noticing. To use OpenAI for that run anyway, pass **`--provider openai`** (and **`--model`** if you want a specific GPT id):
-
-```sh
-drone-graph drone run "$GAP" --provider openai --model gpt-4o
-```
-
-The same idea applies to **`python -m drone_graph.orchestrator.loop`**. Defaults and wiring are in [`src/drone_graph/drones/providers.py`](src/drone_graph/drones/providers.py).
-
-### Windows
-
-- Use **Docker Desktop** instead of Colima to run `docker compose up -d neo4j`.
-- **Bash is required** for the Phase 0/1 demos: each drone uses a persistent **Bash** session for `terminal_run` (not PowerShell or cmd). Install **[Git for Windows](https://git-scm.com/download/win)** so `bash.exe` exists; the project prefers Git’s Bash under `Program Files\Git\bin` when present.
-- After a successful run, paths like `/tmp/hello.txt` are interpreted by **that** Bash environment. Check them from Git Bash, or e.g. `bash -lc "cat /tmp/hello.txt"` — they are not the same as `%TEMP%` in Command Prompt.
-
-Reset state between demos:
-
-```sh
-drone-graph reset-db
-```
-
-## Running the demos
-
-### Single drone, single gap
-
-```sh
-drone-graph reset-db                # also re-mints preset gaps + tool registry
-GAP=$(drone-graph gap create \
-  --intent "Create /tmp/hello.txt containing exactly 'hi from the swarm' plus a trailing newline." \
-  --criteria "/tmp/hello.txt exists with the exact required content.")
-drone-graph drone run "$GAP"        # spawns one drone, runs to fill or fail
-cat /tmp/hello.txt
-drone-graph gap show "$GAP"         # status: filled
-```
-
-### Combined orchestrator loop (Gap Finding + Alignment + workers)
-
-Run the unified loop against a packaged scenario. Real workers spawn on emergent
-leaves every N Gap Finding cycles when `--worker-every` is set. Pick the block
-that matches the vendor key you are using (use **`--provider`** when both keys
-are in your environment—see **Behaviour when both keys are present** above).
-
-**Anthropic (Claude):**
+To drive it headless against one of the packaged scenarios:
 
 ```sh
 python -m drone_graph.orchestrator.loop \
   --scenario coffee-pivot-b2b \
-  --provider anthropic \
-  --model claude-haiku-4-5-20251001 \
-  --worker-every 2 \
-  --worker-max-turns 8 \
-  --out var/runs/coffee-demo-haiku
+  --provider anthropic --model claude-haiku-4-5-20251001 \
+  --worker-every 2 --out var/runs/demo
 ```
 
-**OpenAI (GPT):**
-
-```sh
-python -m drone_graph.orchestrator.loop \
-  --scenario coffee-pivot-b2b \
-  --provider openai \
-  --model gpt-4o \
-  --worker-every 2 \
-  --worker-max-turns 8 \
-  --out var/runs/coffee-demo-gpt4o
-```
-
-### Concurrent scheduler (Phase 3 — parallel workers)
-
-The commands above use **`orchestrator.loop`**: one in-process drone at a time.
-To run **several worker drones in parallel** (subprocesses + SQLite sidecar
-`var/signals.db` for claims, file/install coordination, and cost ceiling), use
-**`python -m drone_graph.orchestrator.scheduler`**. See
-[`ROADMAP.md`](ROADMAP.md) (Phase 3) and
-[`architecture-notes/phase-3-plan.md`](architecture-notes/phase-3-plan.md) for
-details. **`drone-graph reset-signals`** clears the sidecar between experiments.
-
-**Anthropic (Claude)** — `parallel-stress` scenario (contention + cancellation):
+For concurrency (multiple worker drones, file/install/port coordination
+via the SQLite sidecar, cost ceiling), use the scheduler instead:
 
 ```sh
 python -m drone_graph.orchestrator.scheduler \
   --scenario parallel-stress \
-  --provider anthropic \
-  --model claude-haiku-4-5-20251001 \
-  --max-workers 4 \
-  --max-cost-usd 1.00 \
-  --reset-signals \
-  --out var/runs/parallel-stress-haiku
+  --max-workers 4 --max-cost-usd 1.00 --reset-signals \
+  --out var/runs/parallel-stress
 ```
 
-**OpenAI (GPT):**
+Run artefacts land in `var/runs/<scenario>-<ts>/` (`events.jsonl`,
+`tape.jsonl`, `timeline.md`, `tree.md`, `summary.md`). Inspect the
+substrate mid-run from another shell with `drone-graph gap tree`,
+`drone-graph finding list -n 20`, or the Neo4j Browser at
+[localhost:7474](http://localhost:7474). Reset between experiments with
+`drone-graph reset-db` and `drone-graph reset-signals`.
 
-```sh
-python -m drone_graph.orchestrator.scheduler \
-  --scenario parallel-stress \
-  --provider openai \
-  --model gpt-4o \
-  --max-workers 4 \
-  --max-cost-usd 1.00 \
-  --reset-signals \
-  --out var/runs/parallel-stress-gpt4o
-```
+**Windows.** Use Docker Desktop instead of Colima. The drones use a
+persistent bash session for `terminal_run`, so install
+[Git for Windows](https://git-scm.com/download/win) — paths like
+`/tmp/hello.txt` are interpreted by that bash, not by `cmd`.
 
-Scheduler runs also write **`scheduler-tape.jsonl`** and per-drone tapes under
-`var/tapes/<run_id>/` (see the Phase 3 docs).
+---
 
-Per-run artefacts land under `var/runs/<scenario>-<ts>/`: `events.jsonl`,
-`tape.jsonl`, `timeline.md`, `tree.md`, `summary.md`. Inspect the substrate
-mid-run from another shell:
+## Use it for
 
-```sh
-drone-graph gap tree
-drone-graph gap list --status unfilled
-drone-graph finding list --author worker -n 20
-drone-graph finding show <id-prefix>
-```
+Long-running, evidence-heavy work that no single model turn can finish:
+operating a small business end-to-end (the packaged demos run a coffee
+storefront, an OSS Python library, a SaaS content function, a Discord
+moderation team, an AI-infra investment desk); multi-step research where
+findings have to accumulate and inform each other; pipelines whose tools
+and skills need to grow as the work reveals what's actually needed.
 
-In Neo4j Browser ([http://localhost:7474](http://localhost:7474)) you can see the full graph: gaps,
-findings, tools, and the relationships between them.
+**Don't** use it for basic chat, one-shot Q&A, drafting, summarization, or
+anything a single good model call already handles. No point rolling out a
+battle tank to buy milk.
 
-```cypher
-MATCH (t:Tool) RETURN t.name, t.kind ORDER BY t.kind, t.name
-```
+---
 
-## Model registry
+## Architecture
 
-The **model registry** is the JSON source of truth for which models exist in the system, how they are priced, what they support, and how **`Gap.model_tier`** maps to a concrete **`provider`** + **`vendor_model_id`** for routing. The packaged file is [`src/drone_graph/model_registry/model_registry.json`](src/drone_graph/model_registry/model_registry.json). Deeper schema, resolution rules, and enrichment behavior live in [`architecture-notes/model-registry.md`](architecture-notes/model-registry.md).
+A small, deliberate vocabulary; every primitive maps to a node type or
+process in the runtime.
 
-**Prerequisites:** set **`OPENAI_API_KEY`** and/or **`ANTHROPIC_API_KEY`** — same variables as **LLM providers** above for runtime. For the registry CLI specifically: at least one key is required to list models from APIs; both keys unlock the richer doc-enrichment path described in that note.
+- **Gap** — atomic unit of work, defined by absence. Carries `intent`,
+  `criteria`, `tool_loadout`, `tool_suggestions`, `context_preload`, and
+  `preset_kind`. Status: `unfilled | filled | retired`.
+- **Drone** — ephemeral agent instance. One class, one system prompt
+  (`prompts/hivemind.md`); the gap and its loadout decide what it does.
+- **Collective mind** — the shared persistent substrate: `Gap` + `Finding`
+  + `Tool` nodes in Neo4j, plus on-disk artefacts referenced by
+  `Finding.artefact_paths`.
+- **Terminal** — the persistent bash shell every worker acts through.
+  Dies with the drone; respawns on crash so one bad command doesn't kill
+  the worker.
+- **Signal protocol** — mechanical coordination: file claims, install
+  dedup, port leases. Not managerial, not consensus — just enough to keep
+  drones from colliding.
+- **Preset gaps** — persistent gaps minted at substrate init with stable
+  ids (`preset:gap_finding`, `preset:alignment`), never closed, only
+  continually worked.
+- **Auto-rollup** — when all of an emergent parent's non-retired children
+  are `filled`, the substrate fills the parent and emits a `system`
+  finding documenting the rollup.
 
-```sh
-export OPENAI_API_KEY=...          # and/or ANTHROPIC_API_KEY=...
+Deeper, in order of how much detail you want:
 
-# Clean build: list models from vendor APIs, run doc enrichment, overwrite the registry JSON
-# (default path: packaged model_registry.json).
-uv run drone-graph model-registry fresh
+1. [`core-idea/drone-theory.md`](core-idea/drone-theory.md) — the seed thesis
+2. [`core-idea/architectural_overview.md`](core-idea/architectural_overview.md) — consolidated architecture
+3. [`core-idea/decomposition.md`](core-idea/decomposition.md) — gap-finding and alignment mechanics
+4. [`architecture-notes/modules.md`](architecture-notes/modules.md) — per-module intent and CLI surface
+5. [`ROADMAP.md`](ROADMAP.md) — phase-by-phase build plan
+6. [`architecture-notes/phase-3-plan.md`](architecture-notes/phase-3-plan.md) — concurrent scheduler
+7. [`architecture-notes/Phase4-implementation.md`](architecture-notes/Phase4-implementation.md) — Tool nodes, trust tiers, soft-deprecation
+8. [`architecture-notes/model-registry.md`](architecture-notes/model-registry.md) — registry JSON and tier resolution
 
-# Same as fresh, but write elsewhere and print verbose enrichment logs (-v or DRONE_GRAPH_REGISTRY_VERBOSE=1).
-uv run drone-graph model-registry fresh -o ./my-registry.json -v
+## Contributing
 
-# Doc enrichment only on the existing file — no vendor list refetch; fails if the file is missing.
-uv run drone-graph model-registry update
-
-# Merge newly discovered vendor model ids into the current file, then enrich the full set.
-uv run drone-graph model-registry sync
-```
-
-At runtime, **`ModelRegistry.load_auto()`** reads the packaged JSON unless **`DRONE_GRAPH_MODEL_REGISTRY_PATH`** points at another file (see the architecture note for other env vars such as vendor doc cache).
-
-## Running tests
-
-```sh
-pytest                              # all tests; integration tests skip if Neo4j is down
-pytest -m 'not integration'         # unit tests only
-```
-
-`tests/test_phase1_topological.py` was written against an earlier API and is
-currently broken; it'll be replaced as the unified runtime stabilizes. For
-substrate invariants (auto-rollup, `rewrite_intent` guardrails, etc.) see
-`experiments/rollup_check.py`, which exercises the live store against real
-Neo4j and is the authoritative regression check today.
+External contributions are welcome — fork, branch, PR against `main`. For
+anything beyond a typo or one-line fix, open an issue first so we can
+align on intent before you spend time on a patch. See
+[`CONTRIBUTING.md`](CONTRIBUTING.md) for setup, conventions, and what's
+out of scope.
 
 ## License
 

@@ -4,7 +4,6 @@ Importing this package eagerly loads all builtin tools so they are available
 in the registry before any drone runs.
 """
 
-from drone_graph.tools import builtins  # noqa: F401  (eager import for side effects)
 from drone_graph.tools.records import Tool, ToolKind, TrustTier, empty_input_schema
 from drone_graph.tools.registry import (
     BuiltinTool,
@@ -53,3 +52,10 @@ def mirror_builtins_to_graph(tool_store: ToolStore) -> int:
         tool_store.upsert_builtin(record)
         n += 1
     return n
+
+
+# Builtins import last so that any builtin whose module touches
+# `drone_graph.api` (and thus pulls in `orchestrator.bootstrap`, which imports
+# `ToolStore` and `mirror_builtins_to_graph` back from this package) finds the
+# symbols already defined.
+from drone_graph.tools import builtins  # noqa: E402, F401  (eager register)

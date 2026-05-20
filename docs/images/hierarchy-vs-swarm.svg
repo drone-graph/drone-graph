@@ -1,0 +1,195 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 520" font-family="'JetBrains Mono', 'IBM Plex Mono', ui-monospace, monospace" role="img" aria-labelledby="title desc">
+  <title id="title">The org chart is the costume. Take it off.</title>
+  <desc id="desc">Left panel: a rigid corporate org chart in which every box is labeled with the same model, claude-sonnet-4-6, suggesting the hierarchy is purely costume. Right panel: a swarm of identical drones in mission-control aesthetic with no roles, no names, no reporting lines.</desc>
+
+  <defs>
+    <radialGradient id="auroraCobalt2" cx="50%" cy="50%" r="50%">
+      <stop offset="0%"  stop-color="#7aa4ff" stop-opacity="0.45"/>
+      <stop offset="50%" stop-color="#7aa4ff" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="#7aa4ff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="auroraTeal2" cx="50%" cy="50%" r="50%">
+      <stop offset="0%"  stop-color="#9be8d4" stop-opacity="0.40"/>
+      <stop offset="50%" stop-color="#9be8d4" stop-opacity="0.10"/>
+      <stop offset="100%" stop-color="#9be8d4" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="coreCobalt2" cx="35%" cy="35%" r="65%">
+      <stop offset="0%"  stop-color="#9bbcff"/>
+      <stop offset="50%" stop-color="#5b87e5"/>
+      <stop offset="100%" stop-color="#142546"/>
+    </radialGradient>
+    <pattern id="grain2" x="0" y="0" width="3" height="3" patternUnits="userSpaceOnUse">
+      <circle cx="1.5" cy="1.5" r="0.45" fill="#ffffff" opacity="0.03"/>
+    </pattern>
+    <filter id="glow2" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="2"/>
+      <feComposite in2="SourceGraphic" operator="atop"/>
+    </filter>
+  </defs>
+
+  <!-- ========================= LEFT PANEL: ORG CHART ========================= -->
+  <g>
+    <rect x="0" y="0" width="600" height="520" fill="#F5F1E8"/>
+
+    <text x="40" y="48" fill="#1A1A1A" font-family="'Source Serif 4', Georgia, serif" font-size="18" font-style="italic">every box is the same model.</text>
+
+    <!-- reporting lines -->
+    <g stroke="#1A1A1A" fill="none">
+      <!-- CEO down -->
+      <line x1="300" y1="124" x2="300" y2="170" stroke-width="1.2"/>
+      <!-- CEO bar -->
+      <line x1="160" y1="170" x2="440" y2="170" stroke-width="1.2"/>
+      <!-- to VPs -->
+      <line x1="160" y1="170" x2="160" y2="200" stroke-width="1.2"/>
+      <line x1="440" y1="170" x2="440" y2="200" stroke-width="1.2"/>
+      <!-- VP-L down -->
+      <line x1="160" y1="254" x2="160" y2="290" stroke-width="1"/>
+      <line x1="80"  y1="290" x2="240" y2="290" stroke-width="1"/>
+      <line x1="80"  y1="290" x2="80"  y2="320" stroke-width="1"/>
+      <line x1="240" y1="290" x2="240" y2="320" stroke-width="1"/>
+      <!-- VP-R down -->
+      <line x1="440" y1="254" x2="440" y2="290" stroke-width="1"/>
+      <line x1="360" y1="290" x2="520" y2="290" stroke-width="1"/>
+      <line x1="360" y1="290" x2="360" y2="320" stroke-width="1"/>
+      <line x1="520" y1="290" x2="520" y2="320" stroke-width="1"/>
+      <!-- ICs -->
+      <line x1="80" y1="374" x2="80" y2="404" stroke-width="0.8" opacity="0.6"/>
+      <line x1="240" y1="374" x2="240" y2="404" stroke-width="0.8" opacity="0.6"/>
+      <line x1="360" y1="374" x2="360" y2="404" stroke-width="0.8" opacity="0.6"/>
+      <line x1="520" y1="374" x2="520" y2="404" stroke-width="0.8" opacity="0.6"/>
+    </g>
+
+    <!-- box style helpers via inline -->
+    <!-- CEO -->
+    <g transform="translate(240, 76)">
+      <rect width="120" height="48" fill="none" stroke="#1A1A1A" stroke-width="1.5"/>
+      <text x="60" y="22" text-anchor="middle" fill="#1A1A1A" font-size="13">CEO</text>
+      <text x="60" y="38" text-anchor="middle" fill="#1A1A1A" font-size="9" opacity="0.55">claude-sonnet-4-6</text>
+    </g>
+
+    <!-- VP Eng -->
+    <g transform="translate(100, 206)">
+      <rect width="120" height="48" fill="none" stroke="#1A1A1A" stroke-width="1.5"/>
+      <text x="60" y="22" text-anchor="middle" fill="#1A1A1A" font-size="12">VP, Engineering</text>
+      <text x="60" y="38" text-anchor="middle" fill="#1A1A1A" font-size="9" opacity="0.55">claude-sonnet-4-6</text>
+    </g>
+    <!-- VP Marketing -->
+    <g transform="translate(380, 206)">
+      <rect width="120" height="48" fill="none" stroke="#1A1A1A" stroke-width="1.5"/>
+      <text x="60" y="22" text-anchor="middle" fill="#1A1A1A" font-size="12">VP, Marketing</text>
+      <text x="60" y="38" text-anchor="middle" fill="#1A1A1A" font-size="9" opacity="0.55">claude-sonnet-4-6</text>
+    </g>
+
+    <!-- 4 managers -->
+    <g transform="translate(30, 320)">
+      <rect width="100" height="54" fill="none" stroke="#1A1A1A" stroke-width="1.2"/>
+      <text x="50" y="20" text-anchor="middle" fill="#1A1A1A" font-size="11">Backend Lead</text>
+      <text x="50" y="34" text-anchor="middle" fill="#1A1A1A" font-size="9" opacity="0.5">"Marcus"</text>
+      <text x="50" y="46" text-anchor="middle" fill="#1A1A1A" font-size="9" opacity="0.55">claude-sonnet-4-6</text>
+    </g>
+    <g transform="translate(190, 320)">
+      <rect width="100" height="54" fill="none" stroke="#1A1A1A" stroke-width="1.2"/>
+      <text x="50" y="20" text-anchor="middle" fill="#1A1A1A" font-size="11">Frontend Lead</text>
+      <text x="50" y="34" text-anchor="middle" fill="#1A1A1A" font-size="9" opacity="0.5">"Priya"</text>
+      <text x="50" y="46" text-anchor="middle" fill="#1A1A1A" font-size="9" opacity="0.55">claude-sonnet-4-6</text>
+    </g>
+    <g transform="translate(310, 320)">
+      <rect width="100" height="54" fill="none" stroke="#1A1A1A" stroke-width="1.2"/>
+      <text x="50" y="20" text-anchor="middle" fill="#1A1A1A" font-size="11">Brand Manager</text>
+      <text x="50" y="34" text-anchor="middle" fill="#1A1A1A" font-size="9" opacity="0.5">"Maya"</text>
+      <text x="50" y="46" text-anchor="middle" fill="#1A1A1A" font-size="9" opacity="0.55">claude-sonnet-4-6</text>
+    </g>
+    <g transform="translate(470, 320)">
+      <rect width="100" height="54" fill="none" stroke="#1A1A1A" stroke-width="1.2"/>
+      <text x="50" y="20" text-anchor="middle" fill="#1A1A1A" font-size="11">Growth Lead</text>
+      <text x="50" y="34" text-anchor="middle" fill="#1A1A1A" font-size="9" opacity="0.5">"Diego"</text>
+      <text x="50" y="46" text-anchor="middle" fill="#1A1A1A" font-size="9" opacity="0.55">claude-sonnet-4-6</text>
+    </g>
+
+    <!-- IC dots -->
+    <g fill="none" stroke="#1A1A1A" stroke-width="0.8" opacity="0.55">
+      <rect x="50" y="404" width="60" height="32"/>
+      <rect x="210" y="404" width="60" height="32"/>
+      <rect x="330" y="404" width="60" height="32"/>
+      <rect x="490" y="404" width="60" height="32"/>
+    </g>
+    <g fill="#1A1A1A" font-size="8" opacity="0.55" text-anchor="middle">
+      <text x="80" y="424">IC · sonnet</text>
+      <text x="240" y="424">IC · sonnet</text>
+      <text x="360" y="424">IC · sonnet</text>
+      <text x="520" y="424">IC · sonnet</text>
+    </g>
+
+    <!-- diagonal cobalt strike-through, drawn corner-to-corner over the chart -->
+    <line x1="40" y1="50" x2="560" y2="460" stroke="#1E3AE5" stroke-width="3" opacity="0.85"/>
+
+    <text x="40" y="490" fill="#1A1A1A" font-family="'Source Serif 4', Georgia, serif" font-size="14" font-style="italic">11 boxes. 1 model. 11 costumes.</text>
+  </g>
+
+  <!-- divider -->
+  <line x1="600" y1="0" x2="600" y2="520" stroke="#1A1A1A" opacity="0.2"/>
+
+  <!-- ========================= RIGHT PANEL: SWARM ========================= -->
+  <g>
+    <rect x="600" y="0" width="600" height="520" fill="#070a0f"/>
+    <rect x="600" y="0" width="600" height="520" fill="url(#grain2)"/>
+
+    <text x="640" y="48" fill="#9aa4b8" font-family="'JetBrains Mono', monospace" font-size="13" letter-spacing="0.06em">we took the costumes off.</text>
+
+    <!-- signal protocol edges (dashed, mechanical, peer) -->
+    <g stroke="#5e6b82" stroke-width="0.9" stroke-dasharray="3 4" opacity="0.55" fill="none">
+      <line x1="780" y1="170" x2="900" y2="220"/>
+      <line x1="900" y1="220" x2="1020" y2="170"/>
+      <line x1="780" y1="170" x2="720" y2="290"/>
+      <line x1="900" y1="220" x2="840" y2="340"/>
+      <line x1="1020" y1="170" x2="1060" y2="290"/>
+      <line x1="720" y1="290" x2="840" y2="340"/>
+      <line x1="840" y1="340" x2="960" y2="370"/>
+      <line x1="1060" y1="290" x2="960" y2="370"/>
+      <line x1="720" y1="290" x2="900" y2="220"/>
+      <line x1="1020" y1="170" x2="900" y2="220"/>
+    </g>
+
+    <!-- 7 identical drones — every one the same -->
+    <g>
+      <g transform="translate(780, 170)">
+        <circle r="34" fill="url(#auroraCobalt2)"/>
+        <circle r="16" fill="url(#coreCobalt2)"/>
+        <circle r="22" fill="none" stroke="#7aa4ff" stroke-opacity="0.28"/>
+      </g>
+      <g transform="translate(900, 220)">
+        <circle r="34" fill="url(#auroraCobalt2)"/>
+        <circle r="16" fill="url(#coreCobalt2)"/>
+        <circle r="22" fill="none" stroke="#7aa4ff" stroke-opacity="0.28"/>
+      </g>
+      <g transform="translate(1020, 170)">
+        <circle r="34" fill="url(#auroraCobalt2)"/>
+        <circle r="16" fill="url(#coreCobalt2)"/>
+        <circle r="22" fill="none" stroke="#7aa4ff" stroke-opacity="0.28"/>
+      </g>
+      <g transform="translate(720, 290)">
+        <circle r="34" fill="url(#auroraCobalt2)"/>
+        <circle r="16" fill="url(#coreCobalt2)"/>
+        <circle r="22" fill="none" stroke="#7aa4ff" stroke-opacity="0.28"/>
+      </g>
+      <g transform="translate(840, 340)">
+        <circle r="34" fill="url(#auroraCobalt2)"/>
+        <circle r="16" fill="url(#coreCobalt2)"/>
+        <circle r="22" fill="none" stroke="#7aa4ff" stroke-opacity="0.28"/>
+      </g>
+      <g transform="translate(1060, 290)">
+        <circle r="34" fill="url(#auroraCobalt2)"/>
+        <circle r="16" fill="url(#coreCobalt2)"/>
+        <circle r="22" fill="none" stroke="#7aa4ff" stroke-opacity="0.28"/>
+      </g>
+      <g transform="translate(960, 370)">
+        <circle r="34" fill="url(#auroraCobalt2)"/>
+        <circle r="16" fill="url(#coreCobalt2)"/>
+        <circle r="22" fill="none" stroke="#7aa4ff" stroke-opacity="0.28"/>
+      </g>
+    </g>
+
+    <text x="640" y="478" fill="#9aa4b8" font-family="'JetBrains Mono', monospace" font-size="13" letter-spacing="0.06em">7 drones. 1 model. 0 roles.</text>
+    <text x="640" y="498" fill="#5e6b82" font-family="'JetBrains Mono', monospace" font-size="11" letter-spacing="0.04em">the dashed lines are the signal protocol — not reporting lines.</text>
+  </g>
+</svg>
